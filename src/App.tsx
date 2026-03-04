@@ -22,7 +22,7 @@ import { ActivityLogsPage } from './pages/ActivityLogs/ActivityLogsPage';
 import { NotificationsPage } from './pages/Notifications/NotificationsPage';
 import { Toast } from './components/common/Toast';
 import { useToastStore } from './store/toastStore';
-
+import  {EmployeesPage} from './pages/Employees/EmployeesPage';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
@@ -58,6 +58,7 @@ function App() {
             <Route path="ai-dashboard" element={<AIDashboardPage />} />
             <Route path="stores" element={<StoresPage />} />
             <Route path="users" element={<UsersPage />} />
+            <Route path="employees" element={<EmployeesPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="activity-logs" element={<ActivityLogsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />

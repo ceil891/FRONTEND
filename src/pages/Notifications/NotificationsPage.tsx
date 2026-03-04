@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -29,54 +29,39 @@ import {
 import { Notification, NotificationType } from '../../types';
 import { format } from 'date-fns';
 import { useToastStore } from '../../store/toastStore';
+import { notificationAPI, BackendNotification } from '../../api/client';
 
 export const NotificationsPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const { showToast } = useToastStore();
 
-  // Mock data - Thay thế bằng API call
-  const [notifications, setNotifications] = useState<Notification[]>([
-    {
-      id: '1',
-      userId: 'user-1',
-      type: NotificationType.WARNING,
-      title: 'Cảnh báo tồn kho thấp',
-      message: 'Sản phẩm Pepsi 330ml đang ở mức tồn kho thấp (25/50)',
-      link: '/inventory',
-      isRead: false,
-      createdAt: new Date(),
-    },
-    {
-      id: '2',
-      userId: 'user-1',
-      type: NotificationType.SUCCESS,
-      title: 'Đơn hàng hoàn thành',
-      message: 'Đơn hàng HD001 đã được thanh toán thành công',
-      link: '/orders',
-      isRead: false,
-      createdAt: new Date(Date.now() - 3600000),
-    },
-    {
-      id: '3',
-      userId: 'user-1',
-      type: NotificationType.INFO,
-      title: 'Đề xuất từ AI-Agent',
-      message: 'Có 3 đề xuất mới từ AI-Agent cần xem xét',
-      link: '/ai-dashboard',
-      isRead: true,
-      createdAt: new Date(Date.now() - 7200000),
-    },
-    {
-      id: '4',
-      userId: 'user-1',
-      type: NotificationType.ERROR,
-      title: 'Lỗi hệ thống',
-      message: 'Có lỗi xảy ra khi xử lý đơn hàng HD002',
-      link: '/orders',
-      isRead: false,
-      createdAt: new Date(Date.now() - 10800000),
-    },
-  ]);
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    void loadNotifications();
+  }, []);
+
+  const mapBackendToNotification = (n: BackendNotification): Notification => ({
+    id: n.id.toString(),
+    userId: n.userId.toString(),
+    type: n.type as NotificationType,
+    title: n.title,
+    message: n.message,
+    link: n.link || undefined,
+    isRead: n.isRead,
+    createdAt: new Date(n.createdAt),
+  });
+
+  const loadNotifications = async () => {
+    try {
+      const resp = await notificationAPI.getAll();
+      if (resp.data.success && resp.data.data) {
+        setNotifications(resp.data.data.map(mapBackendToNotification));
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tải thông báo', 'error');
+    }
+  };
 
   const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
@@ -112,21 +97,40 @@ export const NotificationsPage: React.FC = () => {
     ? notifications.filter(n => !n.isRead)
     : notifications.filter(n => n.isRead);
 
-  const handleMarkAsRead = (id: string) => {
-    setNotifications(notifications.map(n =>
-      n.id === id ? { ...n, isRead: true } : n
-    ));
-    showToast('Đã đánh dấu đã đọc', 'success');
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      const resp = await notificationAPI.markAsRead(parseInt(id, 10));
+      if (resp.data.success) {
+        showToast('Đã đánh dấu đã đọc', 'success');
+        await loadNotifications();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi cập nhật thông báo', 'error');
+    }
   };
 
-  const handleMarkAllAsRead = () => {
-    setNotifications(notifications.map(n => ({ ...n, isRead: true })));
-    showToast('Đã đánh dấu tất cả là đã đọc', 'success');
+  const handleMarkAllAsRead = async () => {
+    try {
+      const resp = await notificationAPI.markAllAsRead();
+      if (resp.data.success) {
+        showToast('Đã đánh dấu tất cả là đã đọc', 'success');
+        await loadNotifications();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi cập nhật thông báo', 'error');
+    }
   };
 
-  const handleDelete = (id: string) => {
-    setNotifications(notifications.filter(n => n.id !== id));
-    showToast('Đã xóa thông báo', 'success');
+  const handleDelete = async (id: string) => {
+    try {
+      const resp = await notificationAPI.delete(parseInt(id, 10));
+      if (resp.data.success) {
+        showToast('Đã xóa thông báo', 'success');
+        await loadNotifications();
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi xóa thông báo', 'error');
+    }
   };
 
   return (

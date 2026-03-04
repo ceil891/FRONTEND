@@ -20,7 +20,8 @@ import {
   Store as StoreIcon,
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
-import { LoginRequest, UserRole } from '../../types';
+import { LoginRequest, LoginResponse, UserRole, User } from '../../types';
+import { authAPI } from '../../api/client';
 
 export const LoginPage: React.FC = () => {
   const [formData, setFormData] = useState<LoginRequest>({
@@ -29,47 +30,59 @@ export const LoginPage: React.FC = () => {
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const { login } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setLoading(true);
 
-    // Mock login - Thay thế bằng API call thực tế
     try {
-      // Simulate API call
-      const mockResponse = {
-        token: 'mock-jwt-token',
-        user: {
-          id: '1',
-          email: formData.email,
-          fullName: 'Nguyễn Văn A',
-          phone: '0901234567',
-          role: formData.email.includes('super') ? UserRole.SUPER_ADMIN :
-                formData.email.includes('admin') ? UserRole.ADMIN : 
-                formData.email.includes('manager') ? UserRole.MANAGER : UserRole.STAFF,
-          storeId: 'store-1',
-          isActive: true,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        },
-        expiresIn: 3600,
+      // Gọi backend thật để lấy JWT token
+      const backendResponse = await authAPI.login(formData.email, formData.password);
+
+      if (!backendResponse.success || !backendResponse.data?.accessToken) {
+        throw new Error(backendResponse.message || 'Đăng nhập thất bại.');
+      }
+
+      // Tạm thời vẫn dùng user mock (vì backend login chỉ trả token)
+      const mockUser: User = {
+        id: '1',
+        email: formData.email,
+        fullName: 'Người dùng hệ thống',
+        phone: '',
+        role:
+          formData.email.includes('super') ? UserRole.SUPER_ADMIN :
+          formData.email.includes('admin') ? UserRole.ADMIN :
+          formData.email.includes('manager') ? UserRole.MANAGER :
+          UserRole.STAFF,
+        storeId: 'store-1',
+        isActive: true,
+        avatar: undefined,
+        createdAt: new Date(),
+        updatedAt: new Date(),
       };
 
-      login(mockResponse);
+      const loginResponse: LoginResponse = {
+        token: backendResponse.data.accessToken,
+        user: mockUser,
+        expiresIn: 24 * 60 * 60, // backend config: 24h
+      };
 
-      // Redirect based on role
-      const role = mockResponse.user.role;
-      if (role === UserRole.SUPER_ADMIN || role === UserRole.ADMIN) {
-        navigate('/dashboard');
-      } else if (role === UserRole.MANAGER) {
+      login(loginResponse);
+
+      const role = mockUser.role;
+      if (role === UserRole.SUPER_ADMIN || role === UserRole.ADMIN || role === UserRole.MANAGER) {
         navigate('/dashboard');
       } else {
         navigate('/pos');
       }
-    } catch (err) {
-      setError('Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+    } catch (err: any) {
+      setError(err?.message || 'Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -150,8 +163,9 @@ export const LoginPage: React.FC = () => {
                 variant="contained"
                 size="large"
                 sx={{ mt: 3, mb: 2, py: 1.5 }}
+                disabled={loading}
               >
-                Đăng Nhập
+                {loading ? 'Đang đăng nhập...' : 'Đăng Nhập'}
               </Button>
             </Box>
 

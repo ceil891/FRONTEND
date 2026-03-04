@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -17,6 +17,7 @@ import {
   FormControl,
   InputLabel,
   Select,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -27,41 +28,45 @@ import {
 import { Category } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
+import { categoryAPI, BackendCategory } from '../../api/client';
 
 export const CategoriesPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
-  // Mock data - Thay thế bằng API call
-  const [categories, setCategories] = useState<Category[]>([
-    {
-      id: '1',
-      name: 'Đồ Uống',
-      description: 'Nước ngọt, nước khoáng, đồ uống có ga',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      name: 'Thực Phẩm',
-      description: 'Bánh mì, đồ ăn nhanh',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '3',
-      name: 'Đồ Uống Có Cồn',
-      parentId: '1',
-      description: 'Bia, rượu',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ]);
+  const [categories, setCategories] = useState<Category[]>([]);
+
+  useEffect(() => {
+    loadCategories();
+  }, []);
+
+  const loadCategories = async () => {
+    try {
+      setLoading(true);
+      const response = await categoryAPI.getAll();
+      if (response.data.success) {
+        const backendCats = response.data.data || [];
+        const mappedCats: Category[] = backendCats.map((cat: BackendCategory) => ({
+          id: cat.id.toString(),
+          name: cat.name,
+          description: cat.description || undefined,
+          parentId: cat.parentId?.toString(),
+          image: cat.image || undefined,
+          isActive: cat.isActive,
+          createdAt: new Date(cat.createdAt),
+          updatedAt: new Date(cat.updatedAt),
+        }));
+        setCategories(mappedCats);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách danh mục', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const [formData, setFormData] = useState({
     name: '',
@@ -102,38 +107,55 @@ export const CategoriesPage: React.FC = () => {
     });
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) {
       showToast('Vui lòng nhập tên danh mục', 'warning');
       return;
     }
 
-    if (editingCategory) {
-      // Update
-      setCategories(categories.map(cat =>
-        cat.id === editingCategory.id
-          ? { ...cat, ...formData, updatedAt: new Date() }
-          : cat
-      ));
-      showToast('Cập nhật danh mục thành công', 'success');
-    } else {
-      // Create
-      const newCategory: Category = {
-        id: Date.now().toString(),
-        ...formData,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setCategories([...categories, newCategory]);
-      showToast('Thêm danh mục thành công', 'success');
+    try {
+      if (editingCategory) {
+        // Update
+        const response = await categoryAPI.update(parseInt(editingCategory.id), {
+          name: formData.name,
+          description: formData.description || undefined,
+          parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
+          isActive: formData.isActive,
+        });
+        if (response.data.success) {
+          showToast('Cập nhật danh mục thành công', 'success');
+          loadCategories();
+        }
+      } else {
+        // Create
+        const response = await categoryAPI.create({
+          name: formData.name,
+          description: formData.description || undefined,
+          parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
+          isActive: formData.isActive,
+        });
+        if (response.data.success) {
+          showToast('Thêm danh mục thành công', 'success');
+          loadCategories();
+        }
+      }
+      handleCloseDialog();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu danh mục', 'error');
     }
-    handleCloseDialog();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa danh mục này?')) {
-      setCategories(categories.filter(cat => cat.id !== id));
-      showToast('Xóa danh mục thành công', 'success');
+      try {
+        const response = await categoryAPI.delete(parseInt(id));
+        if (response.data.success) {
+          showToast('Xóa danh mục thành công', 'success');
+          loadCategories();
+        }
+      } catch (error: any) {
+        showToast(error.message || 'Lỗi khi xóa danh mục', 'error');
+      }
     }
   };
 
@@ -145,6 +167,14 @@ export const CategoriesPage: React.FC = () => {
 
   const topLevelCategories = categories.filter(cat => !cat.parentId);
   const childCategories = categories.filter(cat => cat.parentId);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>

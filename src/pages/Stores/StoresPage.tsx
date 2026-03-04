@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -13,6 +13,7 @@ import {
   TextField,
   Chip,
   Switch,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -25,10 +26,12 @@ import {
 import { Store } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
+import { storeAPI, BackendStore } from '../../api/client';
 
 export const StoresPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingStore, setEditingStore] = useState<Store | null>(null);
+  const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
@@ -42,44 +45,38 @@ export const StoresPage: React.FC = () => {
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [stores, setStores] = useState<Store[]>([]);
 
-  // Mock data - Thay thế bằng API call
-  const [stores, setStores] = useState<Store[]>([
-    {
-      id: '1',
-      code: 'CH001',
-      name: 'Cửa Hàng Trung Tâm',
-      address: '123 Đường ABC, Quận 1, TP.HCM',
-      phone: '0901234567',
-      email: 'store1@example.com',
-      managerId: 'user-1',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      code: 'CH002',
-      name: 'Cửa Hàng Chi Nhánh 1',
-      address: '456 Đường XYZ, Quận 2, TP.HCM',
-      phone: '0901234568',
-      email: 'store2@example.com',
-      managerId: 'user-2',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '3',
-      code: 'CH003',
-      name: 'Cửa Hàng Chi Nhánh 2',
-      address: '789 Đường DEF, Quận 3, TP.HCM',
-      phone: '0901234569',
-      isActive: false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ]);
+  useEffect(() => {
+    loadStores();
+  }, []);
+
+  const loadStores = async () => {
+    try {
+      setLoading(true);
+      const response = await storeAPI.getAll();
+      if (response.data.success) {
+        const backendStores = response.data.data || [];
+        const mappedStores: Store[] = backendStores.map((store: BackendStore) => ({
+          id: store.id.toString(),
+          code: store.code,
+          name: store.name,
+          address: store.address,
+          phone: store.phone,
+          email: store.email || undefined,
+          managerId: store.managerId?.toString(),
+          isActive: store.isActive,
+          createdAt: new Date(store.createdAt),
+          updatedAt: new Date(store.updatedAt),
+        }));
+        setStores(mappedStores);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách cửa hàng', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleOpenDialog = (store?: Store) => {
     if (store) {
@@ -138,55 +135,68 @@ export const StoresPage: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!validateForm()) {
       showToast('Vui lòng điền đầy đủ thông tin', 'warning');
       return;
     }
 
-    if (editingStore) {
-      // Update store
-      setStores(stores.map(s =>
-        s.id === editingStore.id
-          ? {
-              ...s,
-              code: formData.code,
-              name: formData.name,
-              address: formData.address,
-              phone: formData.phone,
-              email: formData.email || undefined,
-              isActive: formData.isActive,
-              updatedAt: new Date(),
-            }
-          : s
-      ));
-      showToast('Cập nhật cửa hàng thành công', 'success');
-    } else {
-      // Create new store
-      const newStore: Store = {
-        id: Date.now().toString(),
-        code: formData.code,
-        name: formData.name,
-        address: formData.address,
-        phone: formData.phone,
-        email: formData.email || undefined,
-        managerId: undefined,
-        isActive: formData.isActive,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setStores([...stores, newStore]);
-      showToast('Thêm cửa hàng thành công', 'success');
+    try {
+      if (editingStore) {
+        // Update store
+        const response = await storeAPI.update(parseInt(editingStore.id), {
+          name: formData.name,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email || undefined,
+          isActive: formData.isActive,
+        });
+        if (response.data.success) {
+          showToast('Cập nhật cửa hàng thành công', 'success');
+          loadStores();
+        }
+      } else {
+        // Create new store
+        const response = await storeAPI.create({
+          code: formData.code,
+          name: formData.name,
+          address: formData.address,
+          phone: formData.phone,
+          email: formData.email || undefined,
+          isActive: formData.isActive,
+        });
+        if (response.data.success) {
+          showToast('Thêm cửa hàng thành công', 'success');
+          loadStores();
+        }
+      }
+      handleCloseDialog();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu cửa hàng', 'error');
     }
-    handleCloseDialog();
   };
 
-  const handleDelete = (id: string) => {
+  const handleDelete = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa cửa hàng này?')) {
-      setStores(stores.filter(s => s.id !== id));
-      showToast('Xóa cửa hàng thành công', 'success');
+      try {
+        const response = await storeAPI.delete(parseInt(id));
+        if (response.data.success) {
+          showToast('Xóa cửa hàng thành công', 'success');
+          loadStores();
+        }
+      } catch (error: any) {
+        showToast(error.message || 'Lỗi khi xóa cửa hàng', 'error');
+      }
     }
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>

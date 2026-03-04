@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -10,7 +10,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Button,
   IconButton,
   Dialog,
@@ -24,6 +23,7 @@ import {
   InputLabel,
   Select,
   Avatar,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -35,10 +35,14 @@ import {
 import { User, UserRole } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
+import { userAPI, storeAPI, BackendUser, BackendStore } from '../../api/client';
 
 export const UsersPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false); // Thêm state loading cho nút Save
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
@@ -52,80 +56,72 @@ export const UsersPage: React.FC = () => {
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
+  const [users, setUsers] = useState<User[]>([]);
 
-  // Mock data - Thay thế bằng API call
-  const [users, setUsers] = useState<User[]>([
-    {
-      id: '0',
-      email: 'super@example.com',
-      fullName: 'Super Admin',
-      phone: '0900000000',
-      role: UserRole.SUPER_ADMIN,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '1',
-      email: 'admin@example.com',
-      fullName: 'Nguyễn Văn Admin',
-      phone: '0901234567',
-      role: UserRole.ADMIN,
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      email: 'manager@example.com',
-      fullName: 'Trần Thị Manager',
-      phone: '0901234568',
-      role: UserRole.MANAGER,
-      storeId: 'store-1',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '3',
-      email: 'staff@example.com',
-      fullName: 'Lê Văn Staff',
-      phone: '0901234569',
-      role: UserRole.STAFF,
-      storeId: 'store-1',
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ]);
+  useEffect(() => {
+    loadUsers();
+    loadStores();
+  }, []);
+
+  const loadUsers = async () => {
+    try {
+      setLoading(true);
+      const response = await userAPI.getAll();
+      if (response.data.success) {
+        const backendUsers = response.data.data || [];
+        const mappedUsers: User[] = backendUsers.map((user: BackendUser) => ({
+          id: user.id.toString(),
+          email: user.email,
+          fullName: user.fullName,
+          phone: user.phone,
+          role: user.role as UserRole,
+          storeId: user.storeId?.toString(),
+          isActive: user.isActive,
+          createdAt: new Date(user.createdAt),
+          updatedAt: new Date(user.updatedAt),
+        }));
+        setUsers(mappedUsers);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách người dùng', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadStores = async () => {
+    try {
+      const response = await storeAPI.getAll();
+      if (response.data.success) {
+        const backendStores = response.data.data || [];
+        const mappedStores = backendStores.map((store: BackendStore) => ({
+          id: store.id.toString(),
+          name: store.name,
+        }));
+        setStores(mappedStores);
+      }
+    } catch (error: any) {
+      // Ignore error for stores
+    }
+  };
 
   const getRoleLabel = (role: UserRole) => {
     switch (role) {
-      case UserRole.SUPER_ADMIN:
-        return 'Siêu Quản Trị';
-      case UserRole.ADMIN:
-        return 'Quản Trị';
-      case UserRole.MANAGER:
-        return 'Quản Lý';
-      case UserRole.STAFF:
-        return 'Nhân Viên';
-      default:
-        return role;
+      case UserRole.SUPER_ADMIN: return 'Siêu Quản Trị';
+      case UserRole.ADMIN: return 'Quản Trị';
+      case UserRole.MANAGER: return 'Quản Lý';
+      case UserRole.STAFF: return 'Nhân Viên';
+      default: return role;
     }
   };
 
   const getRoleColor = (role: UserRole) => {
     switch (role) {
-      case UserRole.SUPER_ADMIN:
-        return 'error';
-      case UserRole.ADMIN:
-        return 'error';
-      case UserRole.MANAGER:
-        return 'warning';
-      case UserRole.STAFF:
-        return 'info';
-      default:
-        return 'default';
+      case UserRole.SUPER_ADMIN: return 'error';
+      case UserRole.ADMIN: return 'error';
+      case UserRole.MANAGER: return 'warning';
+      case UserRole.STAFF: return 'info';
+      default: return 'default';
     }
   };
 
@@ -156,6 +152,7 @@ export const UsersPage: React.FC = () => {
   };
 
   const handleCloseDialog = () => {
+    if (isSaving) return;
     setOpenDialog(false);
     setEditingUser(null);
     setFormData({
@@ -191,58 +188,87 @@ export const UsersPage: React.FC = () => {
     return Object.keys(errors).length === 0;
   };
 
-  const handleSave = () => {
+  // ✅ HÀM LƯU: GỌI API CREATE HOẶC UPDATE
+  const handleSave = async () => {
     if (!validateForm()) {
-      showToast('Vui lòng điền đầy đủ thông tin', 'warning');
+      showToast('Vui lòng điền đầy đủ thông tin hợp lệ', 'warning');
       return;
     }
 
-    if (editingUser) {
-      // Update user
-      setUsers(users.map(u =>
-        u.id === editingUser.id
-          ? {
-              ...u,
-              fullName: formData.fullName,
-              email: formData.email,
-              phone: formData.phone,
-              role: formData.role,
-              storeId: formData.storeId || undefined,
-              updatedAt: new Date(),
-            }
-          : u
-      ));
-      showToast('Cập nhật người dùng thành công', 'success');
-    } else {
-      // Create new user
-      const newUser: User = {
-        id: Date.now().toString(),
-        email: formData.email,
+    try {
+      setIsSaving(true);
+      
+      const payload = {
         fullName: formData.fullName,
+        email: formData.email,
         phone: formData.phone,
         role: formData.role,
-        storeId: formData.storeId || undefined,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
+        storeId: formData.storeId ? Number(formData.storeId) : undefined,
+        ...(formData.password && { password: formData.password }) // Chỉ gửi pass nếu có nhập
       };
-      setUsers([...users, newUser]);
-      showToast('Thêm người dùng thành công', 'success');
+
+      if (editingUser) {
+        // CẬP NHẬT
+        await userAPI.update(editingUser.id, payload as any);
+        showToast('Cập nhật người dùng thành công', 'success');
+      } else {
+        // TẠO MỚI
+        await userAPI.create(payload as any);
+        showToast('Thêm người dùng thành công', 'success');
+      }
+      
+      // Tải lại danh sách sau khi lưu
+      await loadUsers();
+      handleCloseDialog();
+
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Có lỗi xảy ra khi lưu', 'error');
+    } finally {
+      setIsSaving(false);
     }
-    handleCloseDialog();
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa người dùng này?')) {
+  // ✅ HÀM KHÓA/MỞ KHÓA: GỌI API TOGGLE ACTIVE
+  const handleToggleActive = async (id: string) => {
+    try {
+      const targetUser = users.find(u => u.id === id);
+      if (!targetUser) return;
+
+      const actionText = targetUser.isActive ? 'khóa' : 'mở khóa';
+      if (!window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản này?`)) return;
+
+      await userAPI.toggleActive(id);
+      
+      // Cập nhật lại UI ngay lập tức
+      setUsers(users.map(u => u.id === id ? { ...u, isActive: !u.isActive } : u));
+      showToast(`${actionText === 'khóa' ? 'Khóa' : 'Mở khóa'} tài khoản thành công!`, 'success');
+      
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Lỗi cập nhật trạng thái', 'error');
+    }
+  };
+
+  // ✅ HÀM XÓA: GỌI API DELETE
+  const handleDelete = async (id: string) => {
+    try {
+      if (!window.confirm('Bạn có chắc chắn muốn xóa vĩnh viễn người dùng này? Hành động này không thể hoàn tác!')) return;
+
+      await userAPI.delete(id);
       setUsers(users.filter(u => u.id !== id));
-      showToast('Xóa người dùng thành công', 'success');
+      showToast('Đã xóa người dùng thành công', 'success');
+      
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Lỗi khi xóa người dùng', 'error');
     }
   };
 
-  const mockStores = [
-    { id: 'store-1', name: 'Cửa Hàng 1' },
-    { id: 'store-2', name: 'Cửa Hàng 2' },
-  ];
+  if (loading && users.length === 0) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -285,7 +311,10 @@ export const UsersPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {users.map((user) => (
+                {users.map((user) => {
+                  const storeName = stores.find(s => s.id === user.storeId)?.name;
+                  
+                  return (
                   <TableRow key={user.id}>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
@@ -307,13 +336,14 @@ export const UsersPage: React.FC = () => {
                       />
                     </TableCell>
                     <TableCell>
-                      {user.storeId ? `Cửa hàng ${user.storeId}` : 'Toàn hệ thống'}
+                      {user.storeId ? storeName || `Cửa hàng ${user.storeId}` : 'Toàn hệ thống'}
                     </TableCell>
                     <TableCell>
                       <Chip
-                        label={user.isActive ? 'Hoạt động' : 'Khóa'}
-                        color={user.isActive ? 'success' : 'default'}
+                        label={user.isActive ? 'Hoạt động' : 'Đã Khóa'}
+                        color={user.isActive ? 'success' : 'error'}
                         size="small"
+                        variant={user.isActive ? 'filled' : 'outlined'}
                       />
                     </TableCell>
                     <TableCell align="right">
@@ -325,18 +355,9 @@ export const UsersPage: React.FC = () => {
                           <IconButton
                             size="small"
                             color={user.isActive ? 'warning' : 'success'}
-                            onClick={() => {
-                              setUsers(users.map(u =>
-                                u.id === user.id ? { ...u, isActive: !u.isActive, updatedAt: new Date() } : u
-                              ));
-                              showToast(user.isActive ? 'Khóa tài khoản thành công' : 'Mở khóa tài khoản thành công', 'success');
-                            }}
-                            sx={{
-                              ml: 0.5,
-                              '&:hover': {
-                                transform: 'scale(1.1)',
-                              },
-                            }}
+                            onClick={() => handleToggleActive(user.id)}
+                            sx={{ ml: 0.5, '&:hover': { transform: 'scale(1.1)' } }}
+                            title={user.isActive ? 'Khóa tài khoản' : 'Mở khóa tài khoản'}
                           >
                             {user.isActive ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
                           </IconButton>
@@ -344,12 +365,7 @@ export const UsersPage: React.FC = () => {
                             size="small"
                             color="error"
                             onClick={() => handleDelete(user.id)}
-                            sx={{
-                              ml: 0.5,
-                              '&:hover': {
-                                transform: 'scale(1.1)',
-                              },
-                            }}
+                            sx={{ ml: 0.5, '&:hover': { transform: 'scale(1.1)' } }}
                           >
                             <DeleteIcon fontSize="small" />
                           </IconButton>
@@ -357,7 +373,7 @@ export const UsersPage: React.FC = () => {
                       )}
                     </TableCell>
                   </TableRow>
-                ))}
+                )})}
               </TableBody>
             </Table>
           </TableContainer>
@@ -379,6 +395,7 @@ export const UsersPage: React.FC = () => {
               required
               error={!!formErrors.fullName}
               helperText={formErrors.fullName}
+              disabled={isSaving}
             />
             <TextField
               fullWidth
@@ -389,7 +406,7 @@ export const UsersPage: React.FC = () => {
               required
               error={!!formErrors.email}
               helperText={formErrors.email}
-              disabled={!!editingUser}
+              disabled={!!editingUser || isSaving} // Không cho đổi email khi edit
             />
             <TextField
               fullWidth
@@ -400,6 +417,7 @@ export const UsersPage: React.FC = () => {
               required={!editingUser}
               error={!!formErrors.password}
               helperText={formErrors.password}
+              disabled={isSaving}
             />
             <TextField
               fullWidth
@@ -409,8 +427,9 @@ export const UsersPage: React.FC = () => {
               required
               error={!!formErrors.phone}
               helperText={formErrors.phone}
+              disabled={isSaving}
             />
-            <FormControl fullWidth required>
+            <FormControl fullWidth required disabled={isSaving}>
               <InputLabel>Vai Trò</InputLabel>
               <Select
                 label="Vai Trò"
@@ -423,16 +442,15 @@ export const UsersPage: React.FC = () => {
                 <MenuItem value={UserRole.STAFF}>Nhân Viên</MenuItem>
               </Select>
             </FormControl>
-            <FormControl fullWidth>
+            <FormControl fullWidth disabled={isSaving || formData.role === UserRole.ADMIN || formData.role === UserRole.SUPER_ADMIN}>
               <InputLabel>Cửa Hàng</InputLabel>
               <Select
                 label="Cửa Hàng"
                 value={formData.storeId}
                 onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
-                disabled={formData.role === UserRole.ADMIN || formData.role === UserRole.SUPER_ADMIN}
               >
-                <MenuItem value="">Toàn hệ thống</MenuItem>
-                {mockStores.map((s) => (
+                <MenuItem value="">Toàn hệ thống (Không gắn cửa hàng)</MenuItem>
+                {stores.map((s) => (
                   <MenuItem key={s.id} value={s.id}>
                     {s.name}
                   </MenuItem>
@@ -442,19 +460,14 @@ export const UsersPage: React.FC = () => {
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleCloseDialog}
-            sx={{
-              '&:hover': {
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
+          <Button onClick={handleCloseDialog} disabled={isSaving} sx={{ '&:hover': { transform: 'translateY(-2px)' } }}>
             Hủy
           </Button>
           <Button
             variant="contained"
             onClick={handleSave}
+            disabled={isSaving}
+            startIcon={isSaving ? <CircularProgress size={20} color="inherit" /> : null}
             sx={{
               background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
               boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
@@ -465,7 +478,7 @@ export const UsersPage: React.FC = () => {
               },
             }}
           >
-            {editingUser ? 'Cập Nhật' : 'Tạo Mới'}
+            {isSaving ? 'Đang Lưu...' : editingUser ? 'Cập Nhật' : 'Tạo Mới'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -20,6 +20,7 @@ import {
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
+import { settingsAPI, NotificationSettings } from '../../api/client';
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuthStore();
@@ -33,22 +34,59 @@ export const SettingsPage: React.FC = () => {
     confirmPassword: '',
   });
 
-  const [settings, setSettings] = useState({
+  const [settings, setSettings] = useState<NotificationSettings>({
     emailNotifications: true,
     smsNotifications: false,
     lowStockAlerts: true,
     aiRecommendations: true,
   });
 
-  const handleSaveProfile = () => {
+  useEffect(() => {
+    void loadInitial();
+  }, []);
+
+  const loadInitial = async () => {
+    try {
+      const [userRes, settingsRes] = await Promise.all([
+        settingsAPI.getCurrentUser(),
+        settingsAPI.getNotificationSettings(),
+      ]);
+      if (userRes.data.success && userRes.data.data) {
+        const u = userRes.data.data;
+        setFormData((prev) => ({
+          ...prev,
+          fullName: u.fullName,
+          email: u.email,
+          phone: u.phone,
+        }));
+      }
+      if (settingsRes.data.success && settingsRes.data.data) {
+        setSettings(settingsRes.data.data);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tải cài đặt', 'error');
+    }
+  };
+
+  const handleSaveProfile = async () => {
     if (!formData.fullName.trim() || !formData.email.trim()) {
       showToast('Vui lòng điền đầy đủ thông tin', 'warning');
       return;
     }
-    showToast('Cập nhật thông tin thành công', 'success');
+    try {
+      const resp = await settingsAPI.updateProfile({
+        fullName: formData.fullName,
+        phone: formData.phone,
+      });
+      if (resp.data.success) {
+        showToast('Cập nhật thông tin thành công', 'success');
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi cập nhật thông tin', 'error');
+    }
   };
 
-  const handleChangePassword = () => {
+  const handleChangePassword = async () => {
     if (!formData.currentPassword || !formData.newPassword) {
       showToast('Vui lòng điền đầy đủ thông tin', 'warning');
       return;
@@ -61,13 +99,23 @@ export const SettingsPage: React.FC = () => {
       showToast('Mật khẩu phải có ít nhất 6 ký tự', 'warning');
       return;
     }
-    showToast('Đổi mật khẩu thành công', 'success');
-    setFormData({
-      ...formData,
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: '',
-    });
+    try {
+      const resp = await settingsAPI.changePassword({
+        currentPassword: formData.currentPassword,
+        newPassword: formData.newPassword,
+      });
+      if (resp.data.success) {
+        showToast('Đổi mật khẩu thành công', 'success');
+        setFormData({
+          ...formData,
+          currentPassword: '',
+          newPassword: '',
+          confirmPassword: '',
+        });
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi đổi mật khẩu', 'error');
+    }
   };
 
   return (
@@ -220,7 +268,16 @@ export const SettingsPage: React.FC = () => {
                 <Button
                   variant="contained"
                   startIcon={<SaveIcon />}
-                  onClick={() => showToast('Lưu cài đặt thành công', 'success')}
+                  onClick={async () => {
+                    try {
+                      const resp = await settingsAPI.updateNotificationSettings(settings);
+                      if (resp.data.success) {
+                        showToast('Lưu cài đặt thành công', 'success');
+                      }
+                    } catch (err: any) {
+                      showToast(err?.message || 'Lỗi khi lưu cài đặt', 'error');
+                    }
+                  }}
                   sx={{ mt: 2 }}
                 >
                   Lưu Cài Đặt
