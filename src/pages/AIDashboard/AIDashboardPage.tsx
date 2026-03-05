@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box,
   Card,
@@ -16,6 +16,9 @@ import {
   Paper,
   Alert,
   LinearProgress,
+  CircularProgress,
+  Tabs,
+  Tab,
 } from '@mui/material';
 import {
   SmartToy as SmartToyIcon,
@@ -26,90 +29,86 @@ import {
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { AIRecommendation, DemandPrediction, AIRecommendationType } from '../../types';
+import { aiAPI, BackendAIRecommendation, BackendDemandPrediction } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
 
 export const AIDashboardPage: React.FC = () => {
   const [selectedTab, setSelectedTab] = useState<'recommendations' | 'predictions' | 'alerts'>('recommendations');
+  const [loading, setLoading] = useState(true);
+  const [recommendations, setRecommendations] = useState<AIRecommendation[]>([]);
+  const [predictions, setPredictions] = useState<DemandPrediction[]>([]);
+  const { showToast } = useToastStore();
 
-  // Mock data - Thay thế bằng API call
-  const mockRecommendations: AIRecommendation[] = [
-    {
-      id: '1',
-      type: AIRecommendationType.LOW_STOCK,
-      storeId: 'store-1',
-      productId: 'prod-2',
-      title: 'Cảnh Báo Tồn Kho Thấp',
-      message: 'Sản phẩm Pepsi 330ml đang ở mức tồn kho thấp (25/50). Đề xuất nhập thêm 100 đơn vị.',
-      priority: 'HIGH',
-      isRead: false,
-      isResolved: false,
-      createdAt: new Date(),
-    },
-    {
-      id: '2',
-      type: AIRecommendationType.DEMAND_PREDICTION,
-      storeId: 'store-1',
-      productId: 'prod-1',
-      title: 'Dự Đoán Nhu Cầu Tăng',
-      message: 'Dự đoán nhu cầu Coca Cola sẽ tăng 20% trong 7 ngày tới. Đề xuất tăng tồn kho.',
-      priority: 'MEDIUM',
-      isRead: false,
-      isResolved: false,
-      createdAt: new Date(),
-    },
-    {
-      id: '3',
-      type: AIRecommendationType.SLOW_MOVING,
-      storeId: 'store-1',
-      productId: 'prod-3',
-      title: 'Sản Phẩm Bán Chậm',
-      message: 'Bánh mì thịt nướng có tốc độ bán chậm. Đề xuất giảm giá 10% hoặc điều chuyển sang cửa hàng khác.',
-      priority: 'LOW',
-      isRead: true,
-      isResolved: false,
-      createdAt: new Date(),
-    },
-    {
-      id: '4',
-      type: AIRecommendationType.REVENUE_ANOMALY,
-      storeId: 'store-1',
-      title: 'Doanh Thu Bất Thường',
-      message: 'Doanh thu ngày hôm nay giảm 15% so với cùng kỳ tuần trước. Cần kiểm tra nguyên nhân.',
-      priority: 'URGENT',
-      isRead: false,
-      isResolved: false,
-      createdAt: new Date(),
-    },
-  ];
+  useEffect(() => {
+    loadData();
+  }, [selectedTab]);
 
-  const mockPredictions: DemandPrediction[] = [
-    {
-      productId: 'prod-1',
-      productName: 'Coca Cola 330ml',
-      currentStock: 150,
-      predictedDemand: 180,
-      recommendedOrder: 200,
-      confidence: 85,
-      period: '7 ngày',
-    },
-    {
-      productId: 'prod-2',
-      productName: 'Pepsi 330ml',
-      currentStock: 25,
-      predictedDemand: 60,
-      recommendedOrder: 100,
-      confidence: 90,
-      period: '7 ngày',
-    },
-    {
-      productId: 'prod-3',
-      productName: 'Bánh mì thịt nướng',
-      currentStock: 80,
-      predictedDemand: 50,
-      recommendedOrder: 0,
-      confidence: 75,
-      period: '7 ngày',
-    },
-  ];
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      if (selectedTab === 'recommendations') {
+        const response = await aiAPI.getRecommendations();
+        if (response.data.success) {
+          const backendRecs = response.data.data || [];
+          const mappedRecs: AIRecommendation[] = backendRecs.map((rec: BackendAIRecommendation) => ({
+            id: rec.id.toString(),
+            type: rec.type as AIRecommendationType,
+            storeId: rec.storeId?.toString(),
+            productId: rec.productId?.toString(),
+            title: rec.title,
+            message: rec.message,
+            priority: rec.priority as 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+            isRead: rec.isRead,
+            isResolved: rec.isResolved,
+            createdAt: new Date(rec.createdAt),
+          }));
+          setRecommendations(mappedRecs);
+        }
+      } else if (selectedTab === 'predictions') {
+        const response = await aiAPI.getPredictions();
+        if (response.data.success) {
+          const backendPreds = response.data.data || [];
+          const mappedPreds: DemandPrediction[] = backendPreds.map((pred: BackendDemandPrediction) => ({
+            productId: pred.productId.toString(),
+            productName: pred.productName,
+            currentStock: pred.currentStock,
+            predictedDemand: pred.predictedDemand,
+            recommendedOrder: pred.recommendedOrder,
+            confidence: pred.confidence,
+            period: pred.period,
+          }));
+          setPredictions(mappedPreds);
+        }
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải dữ liệu AI', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleMarkAsRead = async (id: string) => {
+    try {
+      const response = await aiAPI.markAsRead(parseInt(id));
+      if (response.data.success) {
+        loadData();
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi đánh dấu đã đọc', 'error');
+    }
+  };
+
+  const handleMarkAsResolved = async (id: string) => {
+    try {
+      const response = await aiAPI.markAsResolved(parseInt(id));
+      if (response.data.success) {
+        loadData();
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi đánh dấu đã xử lý', 'error');
+    }
+  };
+
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
@@ -133,8 +132,8 @@ export const AIDashboardPage: React.FC = () => {
     }
   };
 
-  const unreadCount = mockRecommendations.filter(r => !r.isRead).length;
-  const urgentCount = mockRecommendations.filter(r => r.priority === 'URGENT' && !r.isResolved).length;
+  const unreadCount = recommendations.filter(r => !r.isRead).length;
+  const urgentCount = recommendations.filter(r => r.priority === 'URGENT' && !r.isResolved).length;
 
   return (
     <Box className="fade-in">
@@ -211,7 +210,7 @@ export const AIDashboardPage: React.FC = () => {
             },
           }}
         >
-          Đề Xuất ({mockRecommendations.length})
+          Đề Xuất ({recommendations.length})
         </Button>
         <Button
           variant={selectedTab === 'predictions' ? 'contained' : 'outlined'}
@@ -227,7 +226,7 @@ export const AIDashboardPage: React.FC = () => {
             },
           }}
         >
-          Dự Đoán Nhu Cầu
+          Dự đoán nhu cầu
         </Button>
         <Button
           variant={selectedTab === 'alerts' ? 'contained' : 'outlined'}
@@ -243,14 +242,19 @@ export const AIDashboardPage: React.FC = () => {
             },
           }}
         >
-          Cảnh Báo ({unreadCount})
+          Cảnh báo ({unreadCount})
         </Button>
       </Box>
 
       {/* Recommendations Tab */}
       {selectedTab === 'recommendations' && (
         <Grid container spacing={3}>
-          {mockRecommendations.map((rec, index) => (
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', p: 4 }}>
+              <CircularProgress />
+            </Box>
+          ) : (
+            recommendations.map((rec, index) => (
             <Grid item xs={12} md={6} key={rec.id}>
               <Card
                 className="fade-in"
@@ -352,7 +356,8 @@ export const AIDashboardPage: React.FC = () => {
                 </CardContent>
               </Card>
             </Grid>
-          ))}
+            ))
+          )}
         </Grid>
       )}
 
@@ -361,22 +366,29 @@ export const AIDashboardPage: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-              Dự Đoán Nhu Cầu Sản Phẩm (7 Ngày Tới)
+              Dự đoán nhu cầu sản phẩm (7 Ngày Tới)
             </Typography>
             <TableContainer>
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Sản Phẩm</TableCell>
-                    <TableCell align="right">Tồn Kho Hiện Tại</TableCell>
-                    <TableCell align="right">Nhu Cầu Dự Đoán</TableCell>
-                    <TableCell align="right">Đề Xuất Nhập</TableCell>
-                    <TableCell align="right">Độ Tin Cậy</TableCell>
-                    <TableCell align="right">Thao Tác</TableCell>
+                    <TableCell align="right">Tồn kho hiện tại</TableCell>
+                    <TableCell align="right">Nhu cầu dự đoán</TableCell>
+                    <TableCell align="right">Đề xuất nhập</TableCell>
+                    <TableCell align="right">Độ tin cậy</TableCell>
+                    <TableCell align="right">Thao tác</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {mockPredictions.map((pred) => (
+                  {loading ? (
+                    <TableRow>
+                      <TableCell colSpan={6} align="center">
+                        <CircularProgress />
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    predictions.map((pred) => (
                     <TableRow key={pred.productId}>
                       <TableCell>
                         <Typography sx={{ fontWeight: 500 }}>
@@ -411,12 +423,13 @@ export const AIDashboardPage: React.FC = () => {
                       <TableCell align="right">
                         {pred.recommendedOrder > 0 && (
                           <Button size="small" variant="contained">
-                            Nhập Hàng
+                            Nhập <h1></h1>àng
                           </Button>
                         )}
                       </TableCell>
                     </TableRow>
-                  ))}
+                    ))
+                  )}
                 </TableBody>
               </Table>
             </TableContainer>
@@ -429,9 +442,9 @@ export const AIDashboardPage: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-              Cảnh Báo Hệ Thống
+              Cảnh báo hệ thống
             </Typography>
-            {mockRecommendations.filter(r => !r.isRead).length === 0 ? (
+            {recommendations.filter(r => !r.isRead).length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
                 <CheckCircleIcon sx={{ fontSize: 60, color: 'success.main', mb: 2 }} />
                 <Typography color="text.secondary">
@@ -444,14 +457,14 @@ export const AIDashboardPage: React.FC = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>Loại</TableCell>
-                      <TableCell>Tiêu Đề</TableCell>
-                      <TableCell>Mức Độ</TableCell>
-                      <TableCell>Thời Gian</TableCell>
-                      <TableCell align="right">Thao Tác</TableCell>
+                      <TableCell>Tiêu đề</TableCell>
+                      <TableCell>Mức độ</TableCell>
+                      <TableCell>Thời gian</TableCell>
+                      <TableCell align="right">Thao tác</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {mockRecommendations
+                    {recommendations
                       .filter(r => !r.isRead)
                       .map((rec) => (
                         <TableRow key={rec.id}>

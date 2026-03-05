@@ -1,224 +1,149 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  TextField,
-  Chip,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  Grid,
-  Avatar,
-  IconButton,
-  Tooltip,
+  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TextField, Chip, MenuItem,
+  FormControl, InputLabel, Select, Grid, Avatar, Tooltip, TablePagination, CircularProgress
 } from '@mui/material';
 import {
-  History as HistoryIcon,
-  Search as SearchIcon,
-  FilterList as FilterIcon,
-  Info as InfoIcon,
-  CheckCircle as CheckCircleIcon,
-  Warning as WarningIcon,
-  Error as ErrorIcon,
+  History as HistoryIcon, Search as SearchIcon,
+  CheckCircle as CheckCircleIcon, Warning as WarningIcon, Error as ErrorIcon, Info as InfoIcon
 } from '@mui/icons-material';
 import { ActivityLog } from '../../types';
 import { format } from 'date-fns';
+import { activityLogAPI, BackendActivityLog } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
+
+// ✅ Cố định danh sách Entity thay vì lấy từ logs hiện tại (tránh lỗi filter bị thiếu)
+const ENTITY_TYPES = ['Order', 'Product', 'Inventory', 'User', 'Store', 'Category', 'Promotion'];
 
 export const ActivityLogsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState(''); // State riêng cho debounce
   const [actionFilter, setActionFilter] = useState<string>('ALL');
   const [entityFilter, setEntityFilter] = useState<string>('ALL');
+  
+  const [logs, setLogs] = useState<ActivityLog[]>([]);
+  const [page, setPage] = useState(0);
+  const [size] = useState(20);
+  const [totalElements, setTotalElements] = useState(0);
+  const [loading, setLoading] = useState(true);
+  
+  const { showToast } = useToastStore();
 
-  // Mock data - Thay thế bằng API call
-  const mockLogs: ActivityLog[] = [
-    {
-      id: '1',
-      userId: 'user-1',
-      action: 'CREATE_ORDER',
-      entityType: 'Order',
-      entityId: 'order-1',
-      details: { orderNumber: 'HD001', total: 50000 },
-      ipAddress: '192.168.1.1',
-      userAgent: 'Chrome/120.0',
-      createdAt: new Date(),
-    },
-    {
-      id: '2',
-      userId: 'user-2',
-      action: 'UPDATE_INVENTORY',
-      entityType: 'Inventory',
-      entityId: 'inv-1',
-      details: { productId: 'prod-1', quantity: 100 },
-      ipAddress: '192.168.1.2',
-      userAgent: 'Firefox/121.0',
-      createdAt: new Date(Date.now() - 3600000),
-    },
-    {
-      id: '3',
-      userId: 'user-1',
-      action: 'DELETE_PRODUCT',
-      entityType: 'Product',
-      entityId: 'prod-2',
-      details: { productName: 'Pepsi 330ml' },
-      ipAddress: '192.168.1.1',
-      userAgent: 'Chrome/120.0',
-      createdAt: new Date(Date.now() - 7200000),
-    },
-    {
-      id: '4',
-      userId: 'user-3',
-      action: 'UPDATE_PRODUCT',
-      entityType: 'Product',
-      entityId: 'prod-3',
-      details: { price: 25000, oldPrice: 20000 },
-      ipAddress: '192.168.1.3',
-      userAgent: 'Safari/17.0',
-      createdAt: new Date(Date.now() - 10800000),
-    },
-  ];
+  // ✅ DEBOUNCE SEARCH: Chờ 500ms sau khi ngừng gõ mới cập nhật từ khóa tìm kiếm
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(0); // Reset về trang 1 khi tìm kiếm
+    }, 500);
+    return () => clearTimeout(handler);
+  }, [searchQuery]);
 
-  const mockUsers = [
-    { id: 'user-1', name: 'Nguyễn Văn A', avatar: '' },
-    { id: 'user-2', name: 'Trần Thị B', avatar: '' },
-    { id: 'user-3', name: 'Lê Văn C', avatar: '' },
-  ];
+  // Load lại data khi page, filter hoặc từ khóa (đã debounce) thay đổi
+  useEffect(() => {
+    void loadLogs();
+  }, [page, actionFilter, entityFilter, debouncedSearch]);
 
-  const getUserName = (userId: string) => {
-    return mockUsers.find(u => u.id === userId)?.name || 'Unknown';
-  };
+  const mapBackendToLog = (log: BackendActivityLog): ActivityLog => ({
+    id: log.id.toString(),
+    userId: log.userId.toString(),
+    action: log.action,
+    entityType: log.entityType,
+    entityId: log.entityId,
+    details: log.details || {},
+    ipAddress: log.ipAddress || 'Unknown',
+    userAgent: log.userAgent || 'Unknown',
+    createdAt: new Date(log.createdAt),
+  });
 
-  const getUserInitial = (userId: string) => {
-    const name = getUserName(userId);
-    return name.charAt(0).toUpperCase();
+  const loadLogs = async () => {
+    try {
+      setLoading(true);
+      const resp = await activityLogAPI.getAll(
+        undefined,
+        actionFilter === 'ALL' ? undefined : actionFilter,
+        entityFilter === 'ALL' ? undefined : entityFilter,
+        debouncedSearch || undefined, // Dùng từ khóa đã debounce
+        page,
+        size
+      );
+      
+      if (resp.data.success && resp.data.data) {
+        const pageData = resp.data.data;
+        setLogs(pageData.content.map(mapBackendToLog));
+        setTotalElements(pageData.totalElements);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tải nhật ký hoạt động', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const getActionLabel = (action: string) => {
     const labels: Record<string, string> = {
-      CREATE_ORDER: 'Tạo đơn hàng',
-      UPDATE_ORDER: 'Cập nhật đơn hàng',
-      DELETE_ORDER: 'Xóa đơn hàng',
-      CREATE_PRODUCT: 'Tạo sản phẩm',
-      UPDATE_PRODUCT: 'Cập nhật sản phẩm',
-      DELETE_PRODUCT: 'Xóa sản phẩm',
-      UPDATE_INVENTORY: 'Cập nhật kho',
-      IMPORT_INVENTORY: 'Nhập kho',
-      EXPORT_INVENTORY: 'Xuất kho',
-      TRANSFER_INVENTORY: 'Điều chuyển kho',
-      CREATE_USER: 'Tạo người dùng',
-      UPDATE_USER: 'Cập nhật người dùng',
-      DELETE_USER: 'Xóa người dùng',
+      CREATE_ORDER: 'Tạo đơn hàng', UPDATE_ORDER: 'Cập nhật đơn', DELETE_ORDER: 'Xóa đơn hàng',
+      CREATE_PRODUCT: 'Tạo sản phẩm', UPDATE_PRODUCT: 'Sửa sản phẩm', DELETE_PRODUCT: 'Xóa sản phẩm',
+      UPDATE_INVENTORY: 'Cập nhật tồn kho', IMPORT_INVENTORY: 'Nhập kho', EXPORT_INVENTORY: 'Xuất kho',
+      LOGIN: 'Đăng nhập', LOGOUT: 'Đăng xuất',
     };
     return labels[action] || action;
   };
 
   const getActionIcon = (action: string) => {
-    if (action.includes('CREATE')) return <CheckCircleIcon color="success" />;
-    if (action.includes('UPDATE')) return <InfoIcon color="info" />;
-    if (action.includes('DELETE')) return <ErrorIcon color="error" />;
-    return <InfoIcon />;
+    if (action.includes('CREATE') || action.includes('IMPORT') || action === 'LOGIN') return <CheckCircleIcon color="success" fontSize="small" />;
+    if (action.includes('UPDATE') || action.includes('EXPORT')) return <InfoIcon color="info" fontSize="small" />;
+    if (action.includes('DELETE') || action.includes('FAIL')) return <ErrorIcon color="error" fontSize="small" />;
+    return <InfoIcon fontSize="small" />;
   };
 
   const getActionColor = (action: string) => {
-    if (action.includes('CREATE')) return 'success';
-    if (action.includes('UPDATE')) return 'info';
-    if (action.includes('DELETE')) return 'error';
+    if (action.includes('CREATE') || action.includes('IMPORT') || action === 'LOGIN') return 'success';
+    if (action.includes('UPDATE') || action.includes('EXPORT')) return 'info';
+    if (action.includes('DELETE') || action.includes('FAIL')) return 'error';
     return 'default';
   };
 
-  const getEntityTypeLabel = (entityType: string) => {
-    const labels: Record<string, string> = {
-      Order: 'Đơn hàng',
-      Product: 'Sản phẩm',
-      Inventory: 'Kho',
-      User: 'Người dùng',
-      Store: 'Cửa hàng',
-      Category: 'Danh mục',
-      Promotion: 'Khuyến mãi',
-    };
-    return labels[entityType] || entityType;
-  };
-
-  const filteredLogs = mockLogs.filter(log => {
-    const matchesSearch =
-      getActionLabel(log.action).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getEntityTypeLabel(log.entityType).toLowerCase().includes(searchQuery.toLowerCase()) ||
-      getUserName(log.userId).toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesAction = actionFilter === 'ALL' || log.action.includes(actionFilter);
-    const matchesEntity = entityFilter === 'ALL' || log.entityType === entityFilter;
-    return matchesSearch && matchesAction && matchesEntity;
-  });
-
-  const uniqueActions = Array.from(new Set(mockLogs.map(log => {
-    if (log.action.includes('CREATE')) return 'CREATE';
-    if (log.action.includes('UPDATE')) return 'UPDATE';
-    if (log.action.includes('DELETE')) return 'DELETE';
-    return 'OTHER';
-  })));
-
-  const uniqueEntities = Array.from(new Set(mockLogs.map(log => log.entityType)));
-
   return (
-    <Box>
+    <Box className="fade-in">
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <HistoryIcon color="primary" />
-          Lịch Sử Hoạt Động
+        <Typography variant="h5" sx={{ fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.5 }}>
+          <HistoryIcon color="primary" sx={{ fontSize: 32 }} />
+          Nhật Ký Hoạt Động (Audit Logs)
         </Typography>
       </Box>
 
       {/* Filters */}
-      <Card sx={{ mb: 3 }}>
+      <Card sx={{ mb: 3, borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
         <CardContent>
           <Grid container spacing={2}>
             <Grid item xs={12} md={4}>
               <TextField
-                fullWidth
-                placeholder="Tìm kiếm theo hành động, entity, người dùng..."
+                fullWidth size="small"
+                placeholder="Tìm kiếm chi tiết (VD: mã đơn, tên)..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{
-                  startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
-                }}
+                InputProps={{ startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} /> }}
               />
             </Grid>
             <Grid item xs={12} md={4}>
-              <FormControl fullWidth>
+              <FormControl fullWidth size="small">
                 <InputLabel>Loại Hành Động</InputLabel>
-                <Select
-                  value={actionFilter}
-                  label="Loại Hành Động"
-                  onChange={(e) => setActionFilter(e.target.value)}
-                >
-                  <MenuItem value="ALL">Tất cả</MenuItem>
-                  <MenuItem value="CREATE">Tạo mới</MenuItem>
-                  <MenuItem value="UPDATE">Cập nhật</MenuItem>
-                  <MenuItem value="DELETE">Xóa</MenuItem>
+                <Select value={actionFilter} label="Loại Hành Động" onChange={(e) => { setActionFilter(e.target.value); setPage(0); }}>
+                  <MenuItem value="ALL">Tất cả hành động</MenuItem>
+                  <MenuItem value="CREATE">Chỉ Tạo mới / Nhập</MenuItem>
+                  <MenuItem value="UPDATE">Chỉ Cập nhật</MenuItem>
+                  <MenuItem value="DELETE">Chỉ Xóa</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
             <Grid item xs={12} md={4}>
-              <FormControl fullWidth>
-                <InputLabel>Loại Entity</InputLabel>
-                <Select
-                  value={entityFilter}
-                  label="Loại Entity"
-                  onChange={(e) => setEntityFilter(e.target.value)}
-                >
-                  <MenuItem value="ALL">Tất cả</MenuItem>
-                  {uniqueEntities.map(entity => (
-                    <MenuItem key={entity} value={entity}>
-                      {getEntityTypeLabel(entity)}
-                    </MenuItem>
+              <FormControl fullWidth size="small">
+                <InputLabel>Thực thể (Entity)</InputLabel>
+                <Select value={entityFilter} label="Thực thể (Entity)" onChange={(e) => { setEntityFilter(e.target.value); setPage(0); }}>
+                  <MenuItem value="ALL">Tất cả thực thể</MenuItem>
+                  {ENTITY_TYPES.map(entity => (
+                    <MenuItem key={entity} value={entity}>{entity}</MenuItem>
                   ))}
                 </Select>
               </FormControl>
@@ -228,87 +153,97 @@ export const ActivityLogsPage: React.FC = () => {
       </Card>
 
       {/* Activity Logs Table */}
-      <Card>
-        <CardContent>
+      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           <TableContainer>
             <Table>
-              <TableHead>
+              <TableHead sx={{ bgcolor: '#f8fafc' }}>
                 <TableRow>
-                  <TableCell>Thời Gian</TableCell>
-                  <TableCell>Người Thực Hiện</TableCell>
-                  <TableCell>Hành Động</TableCell>
-                  <TableCell>Entity</TableCell>
-                  <TableCell>Chi Tiết</TableCell>
-                  <TableCell>IP Address</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Thời Gian</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>ID Người Dùng</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Hành Động</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Thực Thể</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Chi Tiết (Dữ liệu cũ/mới)</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Thiết bị & IP</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredLogs.map((log) => (
-                  <TableRow key={log.id} hover>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {format(log.createdAt, 'dd/MM/yyyy')}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {format(log.createdAt, 'HH:mm:ss')}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Avatar sx={{ width: 32, height: 32, bgcolor: 'primary.main' }}>
-                          {getUserInitial(log.userId)}
-                        </Avatar>
-                        <Typography variant="body2">
-                          {getUserName(log.userId)}
-                        </Typography>
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        {getActionIcon(log.action)}
-                        <Chip
-                          label={getActionLabel(log.action)}
-                          color={getActionColor(log.action) as any}
-                          size="small"
-                        />
-                      </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={getEntityTypeLabel(log.entityType)}
-                        variant="outlined"
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Tooltip title={JSON.stringify(log.details, null, 2)}>
-                        <Typography
-                          variant="body2"
-                          sx={{
-                            maxWidth: 200,
-                            overflow: 'hidden',
-                            textOverflow: 'ellipsis',
-                            whiteSpace: 'nowrap',
-                            cursor: 'help',
-                          }}
-                        >
-                          {JSON.stringify(log.details)}
-                        </Typography>
-                      </Tooltip>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" color="text.secondary">
-                        {log.ipAddress}
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        {log.userAgent}
-                      </Typography>
+                {loading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 5 }}>
+                      <CircularProgress />
                     </TableCell>
                   </TableRow>
-                ))}
+                ) : logs.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>
+                      Không tìm thấy lịch sử hoạt động nào phù hợp.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  logs.map((log) => (
+                    <TableRow key={log.id} hover>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600} color="#1e293b">
+                          {format(log.createdAt, 'dd/MM/yyyy')}
+                        </Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {format(log.createdAt, 'HH:mm:ss')}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                          <Avatar sx={{ width: 28, height: 28, bgcolor: 'primary.main', fontSize: '0.85rem' }}>
+                            U
+                          </Avatar>
+                          <Typography variant="body2" fontWeight={500}>
+                            User ID: {log.userId}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {getActionIcon(log.action)}
+                          <Chip label={getActionLabel(log.action)} color={getActionColor(log.action) as any} size="small" variant="outlined" sx={{ fontWeight: 600 }} />
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Chip label={log.entityType} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 500 }} />
+                        {log.entityId && <Typography variant="caption" display="block" color="text.secondary" mt={0.5}>ID: {log.entityId}</Typography>}
+                      </TableCell>
+                      <TableCell>
+                        <Tooltip title={<pre style={{ margin: 0, fontSize: '11px' }}>{JSON.stringify(log.details, null, 2)}</pre>} arrow placement="top">
+                          <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', cursor: 'pointer', color: '#0ea5e9', bgcolor: '#f0f9ff', px: 1, py: 0.5, borderRadius: 1 }}>
+                            {JSON.stringify(log.details)}
+                          </Typography>
+                        </Tooltip>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontFamily="monospace" color="text.secondary">
+                          {log.ipAddress}
+                        </Typography>
+                        <Typography variant="caption" color="text.disabled" sx={{ maxWidth: 150, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {log.userAgent}
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
               </TableBody>
             </Table>
           </TableContainer>
+          
+          {/* ✅ ĐÃ THÊM PHÂN TRANG (PAGINATION) */}
+          <TablePagination
+            component="div"
+            count={totalElements}
+            page={page}
+            onPageChange={(e, newPage) => setPage(newPage)}
+            rowsPerPage={size}
+            rowsPerPageOptions={[20]}
+            labelDisplayedRows={({ from, to, count }) => `${from}-${to} trên tổng ${count}`}
+            sx={{ borderTop: '1px solid #e2e8f0' }}
+          />
         </CardContent>
       </Card>
     </Box>

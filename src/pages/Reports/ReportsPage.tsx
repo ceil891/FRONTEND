@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -15,16 +15,14 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Paper,
   Button,
   ButtonGroup,
+  CircularProgress,
 } from '@mui/material';
 import {
   PictureAsPdf as PdfIcon,
   TableChart as ExcelIcon,
 } from '@mui/icons-material';
-// PDF/Excel export functionality - temporarily disabled due to Vite import issues
-// Will be re-enabled after resolving module resolution
 import {
   LineChart,
   Line,
@@ -41,9 +39,16 @@ import {
   Cell,
 } from 'recharts';
 import { RevenueReport, ProductSalesReport, StoreComparison } from '../../types';
+import { reportAPI } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
 
 export const ReportsPage: React.FC = () => {
   const [period, setPeriod] = useState<'day' | 'week' | 'month' | 'year'>('month');
+  const [revenueData, setRevenueData] = useState<RevenueReport[]>([]);
+  const [productSalesData, setProductSalesData] = useState<ProductSalesReport[]>([]);
+  const [storeComparisonData, setStoreComparisonData] = useState<StoreComparison[]>([]);
+  const [loading, setLoading] = useState(true);
+  const { showToast } = useToastStore();
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('vi-VN', {
@@ -52,181 +57,258 @@ export const ReportsPage: React.FC = () => {
     }).format(value);
   };
 
-  // Export functions temporarily disabled - will be re-enabled after resolving Vite import issues
-  // const handleExportPDF = async () => { ... }
-  // const handleExportExcel = async () => { ... }
+  // ✅ Hàm helper xử lý ngày tháng chuẩn múi giờ Local (Việt Nam) thay vì UTC
+  const formatLocalDate = (date: Date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
-  // Mock data - Thay thế bằng API call
-  const revenueData: RevenueReport[] = [
-    { period: 'T1', revenue: 120000000, orders: 1200, averageOrderValue: 100000, profit: 36000000, profitMargin: 30 },
-    { period: 'T2', revenue: 135000000, orders: 1300, averageOrderValue: 103846, profit: 40500000, profitMargin: 30 },
-    { period: 'T3', revenue: 150000000, orders: 1450, averageOrderValue: 103448, profit: 45000000, profitMargin: 30 },
-    { period: 'T4', revenue: 125000000, orders: 1250, averageOrderValue: 100000, profit: 37500000, profitMargin: 30 },
-  ];
+  useEffect(() => {
+    void loadReports();
+  }, [period]);
 
-  const productSalesData: ProductSalesReport[] = [
-    { productId: '1', productName: 'Coca Cola 330ml', quantitySold: 5000, revenue: 75000000, profit: 25000000 },
-    { productId: '2', productName: 'Pepsi 330ml', quantitySold: 4500, revenue: 67500000, profit: 22500000 },
-    { productId: '3', productName: 'Bánh mì thịt nướng', quantitySold: 3000, revenue: 75000000, profit: 30000000 },
-  ];
+  const loadReports = async () => {
+    try {
+      setLoading(true);
+      const now = new Date();
+      let start: Date;
 
-  const storeComparisonData: StoreComparison[] = [
-    { storeId: '1', storeName: 'Cửa Hàng 1', revenue: 500000000, orders: 5000, averageOrderValue: 100000, growth: 15.5 },
-    { storeId: '2', storeName: 'Cửa Hàng 2', revenue: 450000000, orders: 4500, averageOrderValue: 100000, growth: 12.3 },
-    { storeId: '3', storeName: 'Cửa Hàng 3', revenue: 380000000, orders: 3800, averageOrderValue: 100000, growth: 8.7 },
-  ];
+      switch (period) {
+        case 'day':
+          start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+          break;
+        case 'week': {
+          const day = now.getDay() || 7;
+          start = new Date(now);
+          start.setDate(now.getDate() - day + 1);
+          break;
+        }
+        case 'year':
+          start = new Date(now.getFullYear(), 0, 1);
+          break;
+        case 'month':
+        default:
+          start = new Date(now.getFullYear(), now.getMonth(), 1);
+      }
 
-  const pieColors = ['#1976d2', '#42a5f5', '#90caf9', '#e3f2fd'];
+      // ✅ Dùng formatLocalDate để tránh lỗi lệch ngày do toISOString()
+      const startDateStr = formatLocalDate(start);
+      const endDateStr = formatLocalDate(now);
+
+      const [revRes, prodRes, storeRes] = await Promise.all([
+        reportAPI.getRevenue(startDateStr, endDateStr),
+        reportAPI.getProductSales(startDateStr, endDateStr),
+        reportAPI.getStoreComparison(startDateStr, endDateStr),
+      ]);
+
+      if (revRes.data.success && revRes.data.data) {
+        setRevenueData(revRes.data.data);
+      }
+      if (prodRes.data.success && prodRes.data.data) {
+        setProductSalesData(prodRes.data.data);
+      }
+      if (storeRes.data.success && storeRes.data.data) {
+        setStoreComparisonData(storeRes.data.data);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tải báo cáo', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const pieColors = ['#1976d2', '#42a5f5', '#90caf9', '#e3f2fd', '#bbdefb'];
+
+  if (loading && revenueData.length === 0) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
-    <Box>
+    <Box className="fade-in">
+      {/* HEADER */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3, flexWrap: 'wrap', gap: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          Báo Cáo & Thống Kê
+        <Typography variant="h5" sx={{ fontWeight: 700, color: '#1e293b' }}>
+          Báo cáo & Thống kê
         </Typography>
         <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-          <FormControl sx={{ minWidth: 200 }}>
+          <FormControl size="small" sx={{ minWidth: 150, bgcolor: 'white' }}>
             <InputLabel>Kỳ Báo Cáo</InputLabel>
             <Select
               value={period}
               label="Kỳ Báo Cáo"
               onChange={(e) => setPeriod(e.target.value as any)}
             >
-              <MenuItem value="day">Theo Ngày</MenuItem>
-              <MenuItem value="week">Theo Tuần</MenuItem>
-              <MenuItem value="month">Theo Tháng</MenuItem>
-              <MenuItem value="year">Theo Năm</MenuItem>
+              <MenuItem value="day">Hôm nay</MenuItem>
+              <MenuItem value="week">Tuần này</MenuItem>
+              <MenuItem value="month">Tháng này</MenuItem>
+              <MenuItem value="year">Năm nay</MenuItem>
             </Select>
           </FormControl>
-          <ButtonGroup variant="outlined">
+          <ButtonGroup variant="outlined" size="medium" sx={{ bgcolor: 'white' }}>
             <Button 
               startIcon={<PdfIcon />} 
-              onClick={() => alert('Tính năng xuất PDF đang được phát triển')}
-              disabled
+              onClick={() => alert('Tính năng xuất PDF đang được cập nhật')}
             >
-              Xuất PDF
+              PDF
             </Button>
             <Button 
               startIcon={<ExcelIcon />} 
-              onClick={() => alert('Tính năng xuất Excel đang được phát triển')}
-              disabled
+              onClick={() => alert('Tính năng xuất Excel đang được cập nhật')}
             >
-              Xuất Excel
+              Excel
             </Button>
           </ButtonGroup>
         </Box>
       </Box>
 
-      {/* Revenue Chart */}
       <Grid container spacing={3}>
+        {/* BIỂU ĐỒ DOANH THU THEO THỜI GIAN */}
         <Grid item xs={12}>
-          <Card>
+          <Card sx={{ borderRadius: 2, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                Doanh Thu Theo Thời Gian
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#334155' }}>
+                Doanh Thu & Lợi Nhuận
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={revenueData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="period" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Legend />
-                  <Line type="monotone" dataKey="revenue" stroke="#1976d2" name="Doanh Thu" />
-                  <Line type="monotone" dataKey="profit" stroke="#2e7d32" name="Lợi Nhuận" />
-                </LineChart>
-              </ResponsiveContainer>
+              {revenueData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart data={revenueData} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="period" stroke="#64748b" />
+                    <YAxis stroke="#64748b" tickFormatter={(value) => `${value / 1000000}M`} />
+                    <Tooltip 
+                      formatter={(value: number) => formatCurrency(value)} 
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                    <Line type="monotone" dataKey="revenue" stroke="#3b82f6" name="Doanh Thu" strokeWidth={3} activeDot={{ r: 8 }} />
+                    <Line type="monotone" dataKey="profit" stroke="#10b981" name="Lợi Nhuận" strokeWidth={3} />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <Typography color="text.secondary" sx={{ py: 5, textAlign: 'center' }}>Không có dữ liệu trong kỳ này.</Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Product Sales */}
+        {/* BÁN HÀNG THEO SẢN PHẨM */}
         <Grid item xs={12} md={8}>
-          <Card>
+          <Card sx={{ borderRadius: 2, height: '100%', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                Bán Hàng Theo Sản Phẩm
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#334155' }}>
+                Top 5 sản phẩm bán vhạy nhất
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={productSalesData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="productName" />
-                  <YAxis />
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                  <Legend />
-                  <Bar dataKey="revenue" fill="#1976d2" name="Doanh Thu" />
-                  <Bar dataKey="profit" fill="#2e7d32" name="Lợi Nhuận" />
-                </BarChart>
-              </ResponsiveContainer>
+              {productSalesData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <BarChart data={productSalesData} margin={{ top: 10, right: 30, left: 20, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
+                    <XAxis dataKey="productName" stroke="#64748b" tick={{ fontSize: 12 }} />
+                    <YAxis stroke="#64748b" tickFormatter={(value) => `${value / 1000000}M`} />
+                    <Tooltip 
+                      formatter={(value: number) => formatCurrency(value)}
+                      contentStyle={{ borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                    />
+                    <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                    <Bar dataKey="revenue" fill="#3b82f6" name="Doanh Thu" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="profit" fill="#10b981" name="Lợi Nhuận" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <Typography color="text.secondary" sx={{ py: 5, textAlign: 'center' }}>Không có dữ liệu trong kỳ này.</Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Revenue Distribution */}
+        {/* PHÂN BỔ DOANH THU */}
         <Grid item xs={12} md={4}>
-          <Card>
+          <Card sx={{ borderRadius: 2, height: '100%', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                Phân Bổ Doanh Thu
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#334155' }}>
+                Tỷ trọng doanh thu
               </Typography>
-              <ResponsiveContainer width="100%" height={300}>
-                <PieChart>
-                  <Pie
-                    data={productSalesData}
-                    dataKey="revenue"
-                    nameKey="productName"
-                    cx="50%"
-                    cy="50%"
-                    outerRadius={80}
-                    label
-                  >
-                    {productSalesData.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip formatter={(value: number) => formatCurrency(value)} />
-                </PieChart>
-              </ResponsiveContainer>
+              {productSalesData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <Pie
+                      data={productSalesData}
+                      dataKey="revenue"
+                      nameKey="productName"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      innerRadius={60}
+                      labelLine={false}
+                    >
+                      {productSalesData.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={pieColors[index % pieColors.length]} />
+                      ))}
+                    </Pie>
+                    <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                    <Legend layout="horizontal" verticalAlign="bottom" align="center" wrapperStyle={{ paddingTop: '20px', fontSize: '12px' }} />
+                  </PieChart>
+                </ResponsiveContainer>
+              ) : (
+                <Typography color="text.secondary" sx={{ py: 5, textAlign: 'center' }}>Không có dữ liệu trong kỳ này.</Typography>
+              )}
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Store Comparison Table */}
+        {/* BẢNG SO SÁNH CỬA HÀNG */}
         <Grid item xs={12}>
-          <Card>
+          <Card sx={{ borderRadius: 2, boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}>
             <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-                So Sánh Cửa Hàng
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 600, color: '#334155', mb: 2 }}>
+                Bảng xếp hạng cửa hàng
               </Typography>
               <TableContainer>
-                <Table>
-                  <TableHead>
+                <Table size="medium">
+                  <TableHead sx={{ bgcolor: '#f8fafc' }}>
                     <TableRow>
-                      <TableCell>Cửa Hàng</TableCell>
-                      <TableCell align="right">Doanh Thu</TableCell>
-                      <TableCell align="right">Số Đơn</TableCell>
-                      <TableCell align="right">Giá Trị TB/Đơn</TableCell>
-                      <TableCell align="right">Tăng Trưởng</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: '#475569' }}>Tên Cửa Hàng</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, color: '#475569' }}>Doanh Thu</TableCell>
+                      <TableCell align="center" sx={{ fontWeight: 600, color: '#475569' }}>Số Đơn Hàng</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, color: '#475569' }}>Giá Trị TB / Đơn</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 600, color: '#475569' }}>Tăng Trưởng</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {storeComparisonData.map((store) => (
-                      <TableRow key={store.storeId}>
-                        <TableCell>{store.storeName}</TableCell>
+                    {storeComparisonData.length > 0 ? storeComparisonData.map((store) => (
+                      <TableRow key={store.storeId} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                        <TableCell sx={{ fontWeight: 500, color: '#1e293b' }}>
+                          {store.storeName}
+                        </TableCell>
                         <TableCell align="right">
-                          <Typography sx={{ fontWeight: 600 }}>
+                          <Typography sx={{ fontWeight: 600, color: '#0f172a' }}>
                             {formatCurrency(store.revenue)}
                           </Typography>
                         </TableCell>
-                        <TableCell align="right">{store.orders.toLocaleString()}</TableCell>
+                        <TableCell align="center">
+                          <Typography sx={{ bgcolor: '#e2e8f0', display: 'inline-block', px: 1.5, py: 0.5, borderRadius: 1, fontWeight: 500 }}>
+                            {store.orders.toLocaleString()}
+                          </Typography>
+                        </TableCell>
                         <TableCell align="right">{formatCurrency(store.averageOrderValue)}</TableCell>
                         <TableCell align="right">
-                          <Typography color="success.main" sx={{ fontWeight: 600 }}>
-                            +{store.growth}%
+                          <Typography color={store.growth >= 0 ? 'success.main' : 'error.main'} sx={{ fontWeight: 700 }}>
+                            {store.growth >= 0 ? '+' : ''}{store.growth}%
                           </Typography>
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )) : (
+                      <TableRow>
+                        <TableCell colSpan={5} align="center" sx={{ py: 4, color: 'text.secondary' }}>
+                          Chưa có dữ liệu bán hàng của các cửa hàng trong kỳ này.
+                        </TableCell>
+                      </TableRow>
+                    )}
                   </TableBody>
                 </Table>
               </TableContainer>

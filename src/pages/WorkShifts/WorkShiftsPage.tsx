@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -33,44 +33,18 @@ import { WorkShift } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
 import { format } from 'date-fns';
+import { workShiftAPI, storeAPI, userAPI, BackendWorkShift, BackendStore, BackendUser } from '../../api/client';
 
 export const WorkShiftsPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingShift, setEditingShift] = useState<WorkShift | null>(null);
+  const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
-  // Mock data
-  const mockUsers = [
-    { id: 'user-1', name: 'Nguyễn Văn A' },
-    { id: 'user-2', name: 'Trần Thị B' },
-    { id: 'user-3', name: 'Lê Văn C' },
-  ];
-
-  const mockStores = [
-    { id: 'store-1', name: 'Cửa Hàng 1' },
-    { id: 'store-2', name: 'Cửa Hàng 2' },
-  ];
-
-  const [shifts, setShifts] = useState<WorkShift[]>([
-    {
-      id: '1',
-      storeId: 'store-1',
-      userId: 'user-1',
-      shiftDate: new Date(),
-      startTime: new Date(new Date().setHours(8, 0, 0, 0)),
-      endTime: new Date(new Date().setHours(17, 0, 0, 0)),
-      createdAt: new Date(),
-    },
-    {
-      id: '2',
-      storeId: 'store-1',
-      userId: 'user-2',
-      shiftDate: new Date(),
-      startTime: new Date(new Date().setHours(17, 0, 0, 0)),
-      createdAt: new Date(),
-    },
-  ]);
+  const [shifts, setShifts] = useState<WorkShift[]>([]);
+  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
 
   const [formData, setFormData] = useState({
     storeId: '',
@@ -80,6 +54,72 @@ export const WorkShiftsPage: React.FC = () => {
     endTime: '',
     notes: '',
   });
+
+  useEffect(() => {
+    void loadInitialData();
+  }, []);
+
+  const loadInitialData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([loadShifts(), loadStores(), loadUsers()]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadShifts = async () => {
+    try {
+      const resp = await workShiftAPI.getAll();
+      if (resp.data.success && resp.data.data) {
+        const mapped: WorkShift[] = resp.data.data.map((ws: BackendWorkShift) => ({
+          id: ws.id.toString(),
+          storeId: ws.storeId.toString(),
+          userId: ws.userId.toString(),
+          shiftDate: new Date(ws.shiftDate),
+          startTime: new Date(`${ws.shiftDate}T${ws.startTime}`),
+          endTime: ws.endTime ? new Date(`${ws.shiftDate}T${ws.endTime}`) : undefined,
+          notes: ws.notes || undefined,
+          createdAt: new Date(ws.createdAt),
+        }));
+        setShifts(mapped);
+      }
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi tải ca làm việc', 'error');
+    }
+  };
+
+  const loadStores = async () => {
+    try {
+      const resp = await storeAPI.getAll();
+      if (resp.data.success && resp.data.data) {
+        setStores(
+          resp.data.data.map((s: BackendStore) => ({
+            id: s.id.toString(),
+            name: s.name,
+          }))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const loadUsers = async () => {
+    try {
+      const resp = await userAPI.getAll();
+      if (resp.data.success && resp.data.data) {
+        setUsers(
+          resp.data.data.map((u: BackendUser) => ({
+            id: u.id.toString(),
+            name: u.fullName,
+          }))
+        );
+      }
+    } catch {
+      // ignore
+    }
+  };
 
   const handleOpenDialog = (shift?: WorkShift) => {
     if (shift) {
@@ -111,7 +151,7 @@ export const WorkShiftsPage: React.FC = () => {
     setEditingShift(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Validation
     if (!formData.storeId || !formData.userId) {
       showToast('Vui lòng chọn cửa hàng và nhân viên', 'warning');
@@ -141,49 +181,59 @@ export const WorkShiftsPage: React.FC = () => {
       endTime.setHours(endHour, endMinute, 0, 0);
     }
 
-    if (editingShift) {
-      setShifts(shifts.map(s =>
-        s.id === editingShift.id
-          ? {
-              ...s,
-              storeId: formData.storeId,
-              userId: formData.userId,
-              shiftDate: new Date(formData.shiftDate),
-              startTime,
-              endTime,
-              notes: formData.notes,
-            }
-          : s
-      ));
-      showToast('Cập nhật ca làm việc thành công', 'success');
-    } else {
-      const newShift: WorkShift = {
-        id: Date.now().toString(),
-        storeId: formData.storeId,
-        userId: formData.userId,
-        shiftDate: new Date(formData.shiftDate),
-        startTime,
-        endTime,
-        notes: formData.notes,
-        createdAt: new Date(),
-      };
-      setShifts([...shifts, newShift]);
-      showToast('Thêm ca làm việc thành công', 'success');
+    try {
+      if (editingShift) {
+        const resp = await workShiftAPI.update(parseInt(editingShift.id, 10), {
+          storeId: parseInt(formData.storeId, 10),
+          userId: parseInt(formData.userId, 10),
+          shiftDate: formData.shiftDate,
+          startTime: formData.startTime,
+          endTime: formData.endTime || undefined,
+          notes: formData.notes || undefined,
+        });
+        if (resp.data.success) {
+          showToast('Cập nhật ca làm việc thành công', 'success');
+          await loadShifts();
+        }
+      } else {
+        const resp = await workShiftAPI.create({
+          storeId: parseInt(formData.storeId, 10),
+          userId: parseInt(formData.userId, 10),
+          shiftDate: formData.shiftDate,
+          startTime: formData.startTime,
+          endTime: formData.endTime || undefined,
+          notes: formData.notes || undefined,
+        });
+        if (resp.data.success) {
+          showToast('Thêm ca làm việc thành công', 'success');
+          await loadShifts();
+        }
+      }
+      handleCloseDialog();
+    } catch (err: any) {
+      showToast(err?.message || 'Lỗi khi lưu ca làm việc', 'error');
     }
-    handleCloseDialog();
   };
 
   const getUserName = (userId: string) => {
-    return mockUsers.find(u => u.id === userId)?.name || 'N/A';
+    return users.find(u => u.id === userId)?.name || 'N/A';
   };
 
   const getStoreName = (storeId: string) => {
-    return mockStores.find(s => s.id === storeId)?.name || 'N/A';
+    return stores.find(s => s.id === storeId)?.name || 'N/A';
   };
 
   const isActive = (shift: WorkShift) => {
     return !shift.endTime;
   };
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <Typography>Đang tải ca làm việc...</Typography>
+      </Box>
+    );
+  }
 
   return (
     <Box>
@@ -273,12 +323,12 @@ export const WorkShiftsPage: React.FC = () => {
           <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <FormControl fullWidth required>
               <InputLabel>Cửa Hàng</InputLabel>
-              <Select
+                <Select
                 label="Cửa Hàng"
                 value={formData.storeId}
                 onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
               >
-                {mockStores.map(store => (
+                {stores.map(store => (
                   <MenuItem key={store.id} value={store.id}>
                     {store.name}
                   </MenuItem>
@@ -287,12 +337,12 @@ export const WorkShiftsPage: React.FC = () => {
             </FormControl>
             <FormControl fullWidth required>
               <InputLabel>Nhân Viên</InputLabel>
-              <Select
+                <Select
                 label="Nhân Viên"
                 value={formData.userId}
                 onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
               >
-                {mockUsers.map(user => (
+                {users.map(user => (
                   <MenuItem key={user.id} value={user.id}>
                     {user.name}
                   </MenuItem>

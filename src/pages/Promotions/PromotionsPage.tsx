@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box,
   Card,
@@ -33,6 +33,8 @@ import {
 import { Promotion } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { format } from 'date-fns';
+import { promotionAPI, BackendPromotion } from '../../api/client';
+import { useAuthStore } from '../../store/authStore';
 
 export const PromotionsPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
@@ -40,38 +42,8 @@ export const PromotionsPage: React.FC = () => {
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
-  // Mock data - Thay thế bằng API call
-  const [promotions, setPromotions] = useState<Promotion[]>([
-    {
-      id: '1',
-      code: 'GIAM10',
-      name: 'Giảm 10% cho đơn hàng trên 100k',
-      description: 'Áp dụng cho tất cả sản phẩm',
-      discountType: 'PERCENTAGE',
-      discountValue: 10,
-      minPurchase: 100000,
-      maxDiscount: 50000,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-    {
-      id: '2',
-      code: 'FIXED20K',
-      name: 'Giảm 20.000đ',
-      description: 'Áp dụng cho đơn hàng trên 50k',
-      discountType: 'FIXED',
-      discountValue: 20000,
-      minPurchase: 50000,
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000),
-      isActive: true,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    },
-  ]);
+  const [promotions, setPromotions] = useState<Promotion[]>([]);
+  const [loading, setLoading] = useState(false);
 
   const [formData, setFormData] = useState({
     code: '',
@@ -85,6 +57,38 @@ export const PromotionsPage: React.FC = () => {
     endDate: format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
     isActive: true,
   });
+
+  const mapBackendToPromotion = (p: BackendPromotion): Promotion => ({
+    id: String(p.id),
+    code: p.code,
+    name: p.name,
+    description: p.description || undefined,
+    discountType: p.discountType,
+    discountValue: p.discountValue,
+    minPurchase: p.minPurchase ?? undefined,
+    maxDiscount: p.maxDiscount ?? undefined,
+    startDate: new Date(p.startDate),
+    endDate: new Date(p.endDate),
+    isActive: p.active,
+    createdAt: p.createdAt ? new Date(p.createdAt) : new Date(),
+    updatedAt: p.updatedAt ? new Date(p.updatedAt) : new Date(),
+  });
+
+  const loadPromotions = async () => {
+    try {
+      setLoading(true);
+      const resp = await promotionAPI.getAll();
+      setPromotions((resp.data ?? []).map(mapBackendToPromotion));
+    } catch (err: any) {
+      showToast(err?.message || 'Không tải được danh sách khuyến mãi', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    void loadPromotions();
+  }, []);
 
   const handleOpenDialog = (promotion?: Promotion) => {
     if (promotion) {
@@ -124,7 +128,7 @@ export const PromotionsPage: React.FC = () => {
     setEditingPromotion(null);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     // Validation
     if (!formData.code.trim() || !formData.name.trim()) {
       showToast('Vui lòng điền đầy đủ mã và tên khuyến mãi', 'warning');
@@ -143,38 +147,42 @@ export const PromotionsPage: React.FC = () => {
       return;
     }
 
-    if (editingPromotion) {
-      setPromotions(promotions.map(promo =>
-        promo.id === editingPromotion.id
-          ? {
-              ...promo,
-              ...formData,
-              startDate: new Date(formData.startDate),
-              endDate: new Date(formData.endDate),
-              updatedAt: new Date(),
-            }
-          : promo
-      ));
-      showToast('Cập nhật khuyến mãi thành công', 'success');
-    } else {
-      const newPromotion: Promotion = {
-        id: Date.now().toString(),
-        ...formData,
-        startDate: new Date(formData.startDate),
-        endDate: new Date(formData.endDate),
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setPromotions([...promotions, newPromotion]);
-      showToast('Thêm khuyến mãi thành công', 'success');
+    const payload: Omit<BackendPromotion, 'id' | 'createdAt' | 'updatedAt'> = {
+      code: formData.code,
+      name: formData.name,
+      description: formData.description || null,
+      discountType: formData.discountType,
+      discountValue: formData.discountValue,
+      minPurchase: formData.minPurchase || null,
+      maxDiscount: formData.maxDiscount || null,
+      startDate: formData.startDate,
+      endDate: formData.endDate,
+      active: formData.isActive,
+    };
+
+    try {
+      if (editingPromotion) {
+        await promotionAPI.update(Number(editingPromotion.id), payload);
+        showToast('Cập nhật khuyến mãi thành công', 'success');
+      } else {
+        await promotionAPI.create(payload);
+        showToast('Thêm khuyến mãi thành công', 'success');
+      }
+      await loadPromotions();
+      handleCloseDialog();
+    } catch (err: any) {
+      showToast(err?.message || 'Lưu khuyến mãi thất bại', 'error');
     }
-    handleCloseDialog();
   };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa khuyến mãi này?')) {
-      setPromotions(promotions.filter(promo => promo.id !== id));
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa khuyến mãi này?')) return;
+    try {
+      await promotionAPI.delete(Number(id));
       showToast('Xóa khuyến mãi thành công', 'success');
+      await loadPromotions();
+    } catch (err: any) {
+      showToast(err?.message || 'Xóa khuyến mãi thất bại', 'error');
     }
   };
 
@@ -218,6 +226,11 @@ export const PromotionsPage: React.FC = () => {
 
       <Card>
         <CardContent>
+          {loading && (
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 1 }}>
+              Đang tải danh sách khuyến mãi...
+            </Typography>
+          )}
           <TableContainer>
             <Table>
               <TableHead>
