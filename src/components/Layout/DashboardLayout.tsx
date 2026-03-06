@@ -13,8 +13,11 @@ import {
   Notifications as NotificationsIcon, SmartToy as SmartToyIcon, Logout as LogoutIcon,
   AccountCircle as AccountCircleIcon, History as HistoryIcon, ExpandLess, ExpandMore,
   AccountBalanceWallet as WalletIcon, LocalShipping as ShippingIcon,
-  Storefront as StorefrontIcon
-} from '@mui/icons-material';
+  Storefront as StorefrontIcon,
+  AccountBalance as AccountBalanceIcon,
+  Map as MapIcon,
+  Security as SecurityIcon
+} from '@mui/icons-material';  
 import { useAuthStore } from '../../store/authStore';
 import { UserRole } from '../../types';
 import { Chatbot } from '../Chatbot/Chatbot';
@@ -91,8 +94,8 @@ export const DashboardLayout: React.FC = () => {
         { text: 'Phiếu thu', icon: <ReceiptIcon />, path: '/finance/receipt', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Phiếu chi', icon: <ReceiptIcon />, path: '/finance/payment', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Công nợ nhà cung cấp', icon: <PeopleIcon />, path: '/finance/supplier-debt', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-                { text: 'Sổ quỹ tiền mặt', icon: <PeopleIcon />, path: '/finance/supplier-debt', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        { text: 'Sỗ quỹ tài khoản ngân hàng', icon: <ReceiptIcon />, path: '/finance/payment', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] }
+                { text: 'Sổ quỹ tiền mặt', icon: <PeopleIcon />, path: '/finance/cash-book', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        { text: 'Sỗ quỹ tài khoản ngân hàng', icon: <ReceiptIcon />, path: '/finance/bank-book', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] }
 
       ]
     },
@@ -121,7 +124,7 @@ export const DashboardLayout: React.FC = () => {
         { text: 'Quản lý cửa hàng', icon: <StoreIcon />, path: '/stores', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Quản lý người dùng', icon: <PeopleIcon />, path: '/users', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Quản lý khu vực', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        { text: 'Lịch sử hoạt động', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+{ text: 'Phân quyền', icon: <SecurityIcon />, path: '/system/roles', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },        { text: 'Lịch sử hoạt động', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Cài đặt hệ thống', icon: <SettingsIcon />, path: '/settings', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] }
 
       ]

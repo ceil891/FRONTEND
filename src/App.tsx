@@ -23,6 +23,31 @@ import { NotificationsPage } from './pages/Notifications/NotificationsPage';
 import { Toast } from './components/common/Toast';
 import { useToastStore } from './store/toastStore';
 import  {EmployeesPage} from './pages/Employees/EmployeesPage';
+import { ReceiptPage } from './pages/finance/ReceiptPage';
+import { PaymentPage } from './pages/finance/PaymentPage';
+import { BankBookPage } from './pages/finance/BankBookPage';
+import { CashBookPage } from './pages/finance/CashBookPage'; // Quên nhắc bạn import cái này ở tin nhắn trước
+import { SupplierDebtPage } from './pages/finance/SupplierDebtPage';
+import { EmployeePerformancePage } from './pages/Employees/EmployeePerformancePage';
+import { StoreRevenueReport } from './pages/Reports/StoreRevenueReport';
+import { TopProductsReport } from './pages/Reports/TopProductsReport';
+import { StorePerformanceReport } from './pages/Reports/StorePerformanceReport';
+import { SystemInventoryReport } from './pages/Reports/SystemInventoryReport';
+import { ProfitLossReport } from './pages/Reports/ProfitLossReport';
+import { LoyaltyPage } from './pages/Customers/LoyaltyPage';
+import { CustomersPage } from './pages/Customers/CustomersPage';
+import { RetailOrdersPage } from './pages/Orders/RetailOrdersPage';
+import { OnlineOrdersPage } from './pages/Orders/OnlineOrdersPage';
+import { CancelledOrdersPage } from './pages/Orders/CancelledOrdersPage';
+import { OrderHistoryPage } from './pages/Orders/OrderHistoryPage';
+import { InventoryCheckPage } from './pages/Inventory/InventoryCheckPage';
+import { ExportInventoryPage } from './pages/Inventory/ExportInventoryPage';
+import { TransferInventoryPage } from './pages/Inventory/TransferInventoryPage';
+import { ReturnCustomerPage } from './pages/Inventory/ReturnCustomerPage';
+import { ReturnSupplierPage } from './pages/Inventory/ReturnSupplierPage';
+import { ProductPricingPage } from './pages/Products/ProductPricingPage';
+import { SuppliersPage } from './pages/Products/SuppliersPage';
+import { RolePermissionPage } from './pages/Systems/RolePermissionPage';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
@@ -56,6 +81,31 @@ function App() {
             <Route path="work-shifts" element={<WorkShiftsPage />} />
             <Route path="reports" element={<ReportsPage />} />
             <Route path="ai-dashboard" element={<AIDashboardPage />} />
+          <Route path="/finance/receipt" element={<ReceiptPage />} />
+        <Route path="/finance/payment" element={<PaymentPage />} />
+        <Route path="/finance/supplier-debt" element={<SupplierDebtPage />} />
+        <Route path="/finance/cash-book" element={<CashBookPage />} />
+        <Route path="/finance/bank-book" element={<BankBookPage />} />
+        <Route path="/employees/performance" element={<EmployeePerformancePage />} />
+<Route path="/reports/store-performance" element={<StorePerformanceReport />} />
+        <Route path="/reports/system-inventory" element={<SystemInventoryReport />} />
+        <Route path="/loyalty" element={<LoyaltyPage />} />
+       <Route path="/orders/cancelled" element={<CancelledOrdersPage />} />
+        <Route path="/orders/history" element={<OrderHistoryPage />} />
+        <Route path="/orders/retail" element={<RetailOrdersPage />} />
+        <Route path="/orders/online" element={<OnlineOrdersPage />} />
+        <Route path="/customers" element={<CustomersPage />} />
+        <Route path="/inventory/export" element={<ExportInventoryPage />} />
+<Route path="/inventory/check" element={<InventoryCheckPage />} />
+<Route path="/inventory/return-supplier" element={<ReturnSupplierPage />} />
+        <Route path="/inventory/return-customer" element={<ReturnCustomerPage />} />
+<Route path="/inventory/transfer" element={<TransferInventoryPage />} />
+<Route path="/system/roles" element={<RolePermissionPage />} />
+        <Route path="/reports/profit-loss" element={<ProfitLossReport />} />
+        <Route path="/reports/store-revenue" element={<StoreRevenueReport />} />
+        <Route path="/reports/top-products" element={<TopProductsReport />} />
+        <Route path="/product-pricing" element={<ProductPricingPage />} />
+        <Route path="/suppliers" element={<SuppliersPage />} />
             <Route path="stores" element={<StoresPage />} />
             <Route path="users" element={<UsersPage />} />
             <Route path="employees" element={<EmployeesPage />} />
