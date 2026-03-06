@@ -1,14 +1,21 @@
 import React, { useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, MenuItem, FormControl, InputLabel, Select
+  TableContainer, TableHead, TableRow, MenuItem, FormControl, Select,
+  Button, Divider, Paper
 } from '@mui/material';
-import { AccountBalanceWallet as ProfitIcon } from '@mui/icons-material';
+import {
+  AccountBalanceWallet as ProfitIcon,
+  Print as PrintIcon,
+  FileDownload as ExcelIcon,
+  FilterAlt as FilterIcon,
+  TrendingUp as TrendingUpIcon
+} from '@mui/icons-material';
 
 const mockProfitLoss = [
   { group: '1. Doanh Thu', items: [{ name: 'Doanh thu bán hàng', hn: 500000000, hcm: 420000000 }] },
   { group: '2. Giá Vốn', items: [{ name: 'Giá vốn hàng bán (COGS)', hn: -300000000, hcm: -250000000 }] },
-  { group: '3. Lợi Nhuận Gộp', items: [{ name: 'Lợi Nhuận Gộp', hn: 200000000, hcm: 170000000 }], isTotal: true },
+  { group: '3. LỢI NHUẬN GỘP', items: [{ name: 'Lợi Nhuận Gộp', hn: 200000000, hcm: 170000000 }], isTotal: true },
   { group: '4. Chi Phí Vận Hành', items: [
       { name: 'Chi phí mặt bằng', hn: -50000000, hcm: -60000000 },
       { name: 'Chi phí nhân sự', hn: -40000000, hcm: -45000000 },
@@ -24,66 +31,116 @@ export const ProfitLossReport: React.FC = () => {
 
   return (
     <Box className="fade-in">
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <ProfitIcon sx={{ fontSize: 32, color: '#be123c' }} />
-          Báo Cáo Lãi Lỗ (P&L) Chi Nhánh
+      <Box sx={{ mb: 2 }}>
+        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
+          BÁO CÁO KẾT QUẢ KINH DOANH (P&L)
         </Typography>
-        <FormControl size="small" sx={{ minWidth: 200, bgcolor: 'white' }}>
-          <InputLabel>Kỳ Báo Cáo</InputLabel>
-          <Select value={month} label="Kỳ Báo Cáo" onChange={(e) => setMonth(e.target.value)}>
-            <MenuItem value="2026-03">Tháng 03/2026</MenuItem>
-            <MenuItem value="2026-02">Tháng 02/2026</MenuItem>
-            <MenuItem value="2026-01">Tháng 01/2026</MenuItem>
-          </Select>
-        </FormControl>
       </Box>
 
-      <Card sx={{ borderRadius: 2, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' }}>
+      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
+          
+          {/* THANH TOOLBAR ĐA MÀU SẮC CHUẨN RIC */}
+          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+            <FormControl size="small" sx={{ minWidth: 200, mr: 1 }}>
+              <Select value={month} onChange={(e) => setMonth(e.target.value)} sx={{ bgcolor: 'white', '& .MuiSelect-select': { py: 0.8, fontSize: '0.875rem' } }}>
+                <MenuItem value="2026-03">Tháng 03/2026</MenuItem>
+                <MenuItem value="2026-02">Tháng 02/2026</MenuItem>
+                <MenuItem value="2026-01">Tháng 01/2026</MenuItem>
+              </Select>
+            </FormControl>
+            
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Báo Cáo</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
+          </Box>
+
+          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Đơn vị tính: Việt Nam Đồng (VND)</Typography>
+          </Box>
+
           <TableContainer>
-            <Table>
-              <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+            <Table sx={{ minWidth: 900 }}>
+              <TableHead sx={{ bgcolor: '#ffffff' }}>
                 <TableRow>
-                  <TableCell sx={{ fontWeight: 800, fontSize: '1rem', width: '40%' }}>Chỉ Tiêu Tài Chính</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem', color: '#166534' }}>Chi Nhánh Hà Nội</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem', color: '#1d4ed8' }}>Chi Nhánh HCM</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 800, fontSize: '1rem', color: '#be123c' }}>Tổng Cộng Toàn Chuỗi</TableCell>
+                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#475569', fontSize: '0.85rem' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>CHỈ TIÊU TÀI CHÍNH <FilterIcon sx={{ fontSize: 14, color: '#cbd5e1' }} /></Box>
+                  </TableCell>
+                  <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#166534', fontSize: '0.85rem' }}>HÀ NỘI</TableCell>
+                  <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#1d4ed8', fontSize: '0.85rem' }}>TP. HCM</TableCell>
+                  <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem', bgcolor: '#f8fafc' }}>TỔNG CỘNG</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {mockProfitLoss.map((section, idx) => (
                   <React.Fragment key={idx}>
-                    {/* Dòng Tiêu đề nhóm */}
+                    {/* Hàng Tiêu Đề Nhóm */}
                     {!section.isTotal && !section.isFinal && (
                       <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                        <TableCell colSpan={4} sx={{ fontWeight: 700, color: '#475569', py: 1.5 }}>{section.group}</TableCell>
+                        <TableCell colSpan={4} sx={{ fontWeight: 700, color: '#1e293b', py: 1, fontSize: '0.85rem', borderBottom: '1px solid #f1f5f9' }}>
+                          {section.group}
+                        </TableCell>
                       </TableRow>
                     )}
-                    {/* Các dòng chi tiết */}
-                    {section.items.map((item, i) => (
-                      <TableRow key={i} sx={{ 
-                        bgcolor: section.isFinal ? '#fef2f2' : section.isTotal ? '#f0fdf4' : 'inherit',
-                      }}>
-                        <TableCell sx={{ pl: section.isTotal || section.isFinal ? 2 : 5, fontWeight: section.isTotal || section.isFinal ? 800 : 500, color: section.isFinal ? '#be123c' : 'inherit', fontSize: section.isFinal ? '1.1rem' : '1rem' }}>
-                          {item.name}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: section.isTotal || section.isFinal ? 700 : 500, color: item.hn < 0 ? '#dc2626' : 'inherit' }}>
-                          {formatCurrency(item.hn)}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: section.isTotal || section.isFinal ? 700 : 500, color: item.hcm < 0 ? '#dc2626' : 'inherit' }}>
-                          {formatCurrency(item.hcm)}
-                        </TableCell>
-                        <TableCell align="right" sx={{ fontWeight: 800, color: (item.hn + item.hcm) < 0 ? '#dc2626' : section.isFinal ? '#be123c' : '#0f172a', fontSize: section.isFinal ? '1.1rem' : '1rem' }}>
-                          {formatCurrency(item.hn + item.hcm)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
+                    
+                    {/* Các dòng dữ liệu */}
+                    {section.items.map((item, i) => {
+                      const total = item.hn + item.hcm;
+                      return (
+                        <TableRow key={i} hover sx={{ 
+                          bgcolor: section.isFinal ? '#fff1f2' : section.isTotal ? '#f0fdf4' : 'inherit',
+                          '&:last-child td': { borderBottom: section.isFinal ? 0 : '1px solid #f1f5f9' }
+                        }}>
+                          <TableCell sx={{ 
+                            pl: section.isTotal || section.isFinal ? 2 : 5, 
+                            fontWeight: section.isTotal || section.isFinal ? 700 : 500,
+                            color: section.isFinal ? '#be123c' : '#475569',
+                            fontSize: '0.85rem',
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {item.name}
+                          </TableCell>
+                          
+                          <TableCell align="right" sx={{ 
+                            fontSize: '0.85rem', 
+                            color: item.hn < 0 ? '#dc2626' : '#475569',
+                            fontWeight: section.isTotal || section.isFinal ? 700 : 500,
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {formatCurrency(item.hn)}
+                          </TableCell>
+                          
+                          <TableCell align="right" sx={{ 
+                            fontSize: '0.85rem', 
+                            color: item.hcm < 0 ? '#dc2626' : '#475569',
+                            fontWeight: section.isTotal || section.isFinal ? 700 : 500,
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {formatCurrency(item.hcm)}
+                          </TableCell>
+                          
+                          <TableCell align="right" sx={{ 
+                            fontSize: '0.9rem', 
+                            fontWeight: 800, 
+                            color: total < 0 ? '#dc2626' : section.isFinal ? '#be123c' : '#0f172a',
+                            bgcolor: section.isFinal ? '#ffe4e6' : section.isTotal ? '#dcfce7' : '#f8fafc',
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {formatCurrency(total)}
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </React.Fragment>
                 ))}
               </TableBody>
             </Table>
           </TableContainer>
+
+          <Box sx={{ p: 2, bgcolor: '#ffffff', display: 'flex', justifyContent: 'flex-end' }}>
+             <Typography variant="caption" sx={{ fontStyle: 'italic', color: '#94a3b8' }}>
+               * Dữ liệu được tổng hợp tự động từ module Bán hàng và module Chi phí.
+             </Typography>
+          </Box>
         </CardContent>
       </Card>
     </Box>

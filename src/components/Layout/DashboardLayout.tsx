@@ -75,9 +75,11 @@ export const DashboardLayout: React.FC = () => {
       text: 'Sản phẩm', icon: <CategoryIcon />, roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN],
       children: [
         { text: 'Quản lý sản phẩm', icon: <StoreIcon />, path: '/products', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        { text: 'Danh mục', icon: <CategoryIcon />, path: '/categories', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        { text: ' Quản lý Danh mục', icon: <CategoryIcon />, path: '/categories', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Giá theo cửa hàng', icon: <OfferIcon />, path: '/product-pricing', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        { text: 'Nhà cung cấp', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] }
+        { text: ' Quản lý Nhà cung cấp', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        {text: 'Quản lý đơn vị', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+
       ]
     },
     { 
@@ -94,9 +96,8 @@ export const DashboardLayout: React.FC = () => {
         { text: 'Phiếu thu', icon: <ReceiptIcon />, path: '/finance/receipt', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Phiếu chi', icon: <ReceiptIcon />, path: '/finance/payment', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Công nợ nhà cung cấp', icon: <PeopleIcon />, path: '/finance/supplier-debt', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-                { text: 'Sổ quỹ tiền mặt', icon: <PeopleIcon />, path: '/finance/cash-book', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        { text: 'Sổ quỹ tiền mặt', icon: <PeopleIcon />, path: '/finance/cash-book', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Sỗ quỹ tài khoản ngân hàng', icon: <ReceiptIcon />, path: '/finance/bank-book', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] }
-
       ]
     },
     
@@ -123,8 +124,8 @@ export const DashboardLayout: React.FC = () => {
       children: [
         { text: 'Quản lý cửa hàng', icon: <StoreIcon />, path: '/stores', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Quản lý người dùng', icon: <PeopleIcon />, path: '/users', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        { text: 'Quản lý khu vực', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-{ text: 'Phân quyền', icon: <SecurityIcon />, path: '/system/roles', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },        { text: 'Lịch sử hoạt động', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        { text: 'Quản lý khu vực', icon: <HistoryIcon />, path: '/stores/area', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        { text: 'Phân quyền', icon: <SecurityIcon />, path: '/system/roles', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },        { text: 'Lịch sử hoạt động', icon: <HistoryIcon />, path: '/activity-logs', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Cài đặt hệ thống', icon: <SettingsIcon />, path: '/settings', roles: [UserRole.ADMIN, UserRole.SUPER_ADMIN] }
 
       ]

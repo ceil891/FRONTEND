@@ -13,7 +13,6 @@ import { ProductsPage } from './pages/Products/ProductsPage';
 import { CategoriesPage } from './pages/Categories/CategoriesPage';
 import { PromotionsPage } from './pages/Promotions/PromotionsPage';
 import { WorkShiftsPage } from './pages/WorkShifts/WorkShiftsPage';
-import { ReportsPage } from './pages/Reports/ReportsPage';
 import { AIDashboardPage } from './pages/AIDashboard/AIDashboardPage';
 import { StoresPage } from './pages/Stores/StoresPage';
 import { UsersPage } from './pages/Users/UsersPage';
@@ -48,6 +47,8 @@ import { ReturnSupplierPage } from './pages/Inventory/ReturnSupplierPage';
 import { ProductPricingPage } from './pages/Products/ProductPricingPage';
 import { SuppliersPage } from './pages/Products/SuppliersPage';
 import { RolePermissionPage } from './pages/Systems/RolePermissionPage';
+import { ImportInventoryPage } from './pages/Inventory/ImportInventoryPage';
+import { AreasPage } from './pages/Stores/AreasPage';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
@@ -79,7 +80,6 @@ function App() {
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="promotions" element={<PromotionsPage />} />
             <Route path="work-shifts" element={<WorkShiftsPage />} />
-            <Route path="reports" element={<ReportsPage />} />
             <Route path="ai-dashboard" element={<AIDashboardPage />} />
           <Route path="/finance/receipt" element={<ReceiptPage />} />
         <Route path="/finance/payment" element={<PaymentPage />} />
@@ -91,6 +91,7 @@ function App() {
         <Route path="/reports/system-inventory" element={<SystemInventoryReport />} />
         <Route path="/loyalty" element={<LoyaltyPage />} />
        <Route path="/orders/cancelled" element={<CancelledOrdersPage />} />
+              <Route path="/inventory/import" element={<ImportInventoryPage/>} />
         <Route path="/orders/history" element={<OrderHistoryPage />} />
         <Route path="/orders/retail" element={<RetailOrdersPage />} />
         <Route path="/orders/online" element={<OnlineOrdersPage />} />
@@ -99,6 +100,7 @@ function App() {
 <Route path="/inventory/check" element={<InventoryCheckPage />} />
 <Route path="/inventory/return-supplier" element={<ReturnSupplierPage />} />
         <Route path="/inventory/return-customer" element={<ReturnCustomerPage />} />
+                <Route path="/stores/area" element={<AreasPage />} />
 <Route path="/inventory/transfer" element={<TransferInventoryPage />} />
 <Route path="/system/roles" element={<RolePermissionPage />} />
         <Route path="/reports/profit-loss" element={<ProfitLossReport />} />
