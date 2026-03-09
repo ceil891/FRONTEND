@@ -8,13 +8,15 @@ import {
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, 
   Print as PrintIcon, FileUpload as ImportIcon, FileDownload as ExcelIcon, 
-  FilterAlt as FilterIcon
+  FilterAlt as FilterIcon,
+  Widgets as VariantIcon
 } from '@mui/icons-material';
 import { Product } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
 import {
-  productAPI, categoryAPI, uploadAPI, BackendCategory, SaveSanPhamRequest
+  productAPI, categoryAPI, uploadAPI, BackendCategory, SaveSanPhamRequest,
+  variantAPI, type BackendBienTheSanPham
 } from '../../api/client';
 
 const UNIT_OPTIONS = [
@@ -44,6 +46,20 @@ export const ProductsPage: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
   const [categories, setCategories] = useState<BackendCategory[]>([]);
+
+  // ====== BIẾN THỂ UI ======
+  const [openVariantDialog, setOpenVariantDialog] = useState(false);
+  const [variantProduct, setVariantProduct] = useState<Product | null>(null);
+  const [variants, setVariants] = useState<BackendBienTheSanPham[]>([]);
+  const [variantLoading, setVariantLoading] = useState(false);
+  const [variantForm, setVariantForm] = useState({
+    tenBienThe: '',
+    maSku: '',
+    giaBan: '',
+    giaNhap: '',
+    maVach: '',
+    hoatDong: true,
+  });
 
   // ================= LOGIC API (GIỮ NGUYÊN 100%) =================
   const mapBackendToProduct = (sp: any): Product => {
@@ -98,6 +114,64 @@ export const ProductsPage: React.FC = () => {
   };
 
   useEffect(() => { void loadData(); }, []);
+
+  const openVariants = async (p: Product) => {
+    try {
+      setVariantProduct(p);
+      setOpenVariantDialog(true);
+      setVariantLoading(true);
+      const res = await variantAPI.getByProductId(Number(p.id));
+      setVariants(res.data ?? []);
+      setVariantForm({
+        tenBienThe: '',
+        maSku: '',
+        giaBan: '',
+        giaNhap: '',
+        maVach: '',
+        hoatDong: true,
+      });
+    } catch (err: any) {
+      showToast('Không tải được biến thể: ' + (err.response?.data?.message || err.message), 'error');
+    } finally {
+      setVariantLoading(false);
+    }
+  };
+
+  const createVariant = async () => {
+    if (!variantProduct) return;
+    if (!variantForm.maSku.trim()) return showToast('Vui lòng nhập SKU biến thể', 'error');
+    try {
+      const payload = {
+        sanPham: { sanPhamId: Number(variantProduct.id) },
+        tenBienThe: variantForm.tenBienThe.trim() || variantProduct.name,
+        maSku: variantForm.maSku.trim(),
+        giaBan: Number(variantForm.giaBan || 0),
+        giaNhap: Number(variantForm.giaNhap || 0),
+        maVach: variantForm.maVach.trim() || variantForm.maSku.trim(),
+        hoatDong: Boolean(variantForm.hoatDong),
+      };
+      await variantAPI.create(payload);
+      showToast('Tạo biến thể thành công', 'success');
+      const res = await variantAPI.getByProductId(Number(variantProduct.id));
+      setVariants(res.data ?? []);
+      setVariantForm({ tenBienThe: '', maSku: '', giaBan: '', giaNhap: '', maVach: '', hoatDong: true });
+    } catch (err: any) {
+      showToast('Lỗi tạo biến thể: ' + (err.response?.data?.message || err.message), 'error');
+    }
+  };
+
+  const deleteVariant = async (id: number) => {
+    if (!variantProduct) return;
+    if (!window.confirm('Xóa biến thể này?')) return;
+    try {
+      await variantAPI.delete(id);
+      const res = await variantAPI.getByProductId(Number(variantProduct.id));
+      setVariants(res.data ?? []);
+      showToast('Đã xóa biến thể', 'success');
+    } catch (err: any) {
+      showToast('Không thể xóa: ' + (err.response?.data?.message || err.message), 'error');
+    }
+  };
 
   const categoryMap = useMemo(() => {
     const map: Record<number, string> = {};
@@ -239,6 +313,7 @@ export const ProductsPage: React.FC = () => {
                         <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                           <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
                             <Box onClick={() => handleOpenDialog(p)} sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
+                            <Box onClick={() => openVariants(p)} sx={{ bgcolor: '#0073b7', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><VariantIcon sx={{ fontSize: 14 }} /></Box>
                             <Box onClick={() => handleDelete(p.id)} sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><DeleteIcon sx={{ fontSize: 14 }} /></Box>
                           </Box>
                         </TableCell>
@@ -365,6 +440,106 @@ export const ProductsPage: React.FC = () => {
           <Button variant="contained" onClick={handleSave} disabled={uploading} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
             Lưu Thay Đổi
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* ===== Dialog quản lý biến thể ===== */}
+      <Dialog open={openVariantDialog} onClose={() => setOpenVariantDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Biến thể sản phẩm: {variantProduct?.name}</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 2fr 1fr', gap: 1, mb: 2 }}>
+            <TextField
+              size="small"
+              label="Tên biến thể"
+              value={variantForm.tenBienThe}
+              onChange={(e) => setVariantForm((p) => ({ ...p, tenBienThe: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="SKU biến thể *"
+              value={variantForm.maSku}
+              onChange={(e) => setVariantForm((p) => ({ ...p, maSku: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Giá bán"
+              value={variantForm.giaBan}
+              onChange={(e) => setVariantForm((p) => ({ ...p, giaBan: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Giá nhập"
+              value={variantForm.giaNhap}
+              onChange={(e) => setVariantForm((p) => ({ ...p, giaNhap: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Mã vạch"
+              value={variantForm.maVach}
+              onChange={(e) => setVariantForm((p) => ({ ...p, maVach: e.target.value }))}
+            />
+            <Button variant="contained" onClick={createVariant} sx={{ textTransform: 'none' }}>
+              Tạo
+            </Button>
+          </Box>
+
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>ID</TableCell>
+                  <TableCell>SKU</TableCell>
+                  <TableCell>Tên biến thể</TableCell>
+                  <TableCell align="right">Giá bán</TableCell>
+                  <TableCell align="right">Giá nhập</TableCell>
+                  <TableCell>Mã vạch</TableCell>
+                  <TableCell align="center">Trạng thái</TableCell>
+                  <TableCell align="center">Xóa</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {variantLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                      <CircularProgress size={24} />
+                    </TableCell>
+                  </TableRow>
+                ) : variants.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                      Chưa có biến thể
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  variants.map((v) => (
+                    <TableRow key={v.bienTheId}>
+                      <TableCell>{v.bienTheId}</TableCell>
+                      <TableCell>{v.maSku}</TableCell>
+                      <TableCell>{v.tenBienThe}</TableCell>
+                      <TableCell align="right">{Number(v.giaBan ?? 0).toLocaleString('vi-VN')}</TableCell>
+                      <TableCell align="right">{Number(v.giaNhap ?? 0).toLocaleString('vi-VN')}</TableCell>
+                      <TableCell>{v.maVach}</TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={v.hoatDong ? 'Đang bán' : 'Ngưng bán'}
+                          size="small"
+                          color={v.hoatDong ? 'success' : 'default'}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Button size="small" color="error" onClick={() => deleteVariant(v.bienTheId)}>
+                          Xóa
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenVariantDialog(false)} sx={{ textTransform: 'none' }}>Đóng</Button>
         </DialogActions>
       </Dialog>
     </Box>

@@ -78,7 +78,7 @@ export const DashboardLayout: React.FC = () => {
         { text: ' Quản lý Danh mục', icon: <CategoryIcon />, path: '/categories', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: 'Giá theo cửa hàng', icon: <OfferIcon />, path: '/product-pricing', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: ' Quản lý Nhà cung cấp', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-        {text: 'Quản lý đơn vị', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
+        {text: 'Quản lý đơn vị', icon: <PeopleIcon />, path: '/units', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
 
       ]
     },

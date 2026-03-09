@@ -54,14 +54,18 @@ export const OrdersPage: React.FC = () => {
 
     return {
       id: String(hd?.hoaDonId || Math.random()),
-      orderNumber: `HD${hd?.hoaDonId || ''}`,
-      storeId: hd?.cuaHang?.tenCuaHang || 'Hệ thống',
-      staffId: hd?.nhanVien?.hoTen || 'Admin',
-      customerName: hd?.khachHang?.hoTen || 'Khách lẻ',
+      orderNumber: hd?.maHoaDon || `HD${hd?.hoaDonId || ''}`,
+      storeId: hd?.tenCuaHang || hd?.cuaHang?.tenCuaHang || 'Hệ thống',
+      staffId: hd?.tenNhanVien || hd?.nhanVien?.hoTen || 'Admin',
+      customerName: hd?.tenKhachHang || hd?.khachHang?.hoTen || 'Khách lẻ',
       subtotal: Number(hd?.tamTinh || 0),
       discount: Number(hd?.chietKhau || 0),
       total: Number(hd?.tongPhaiThanhToan || hd?.total || 0), 
-      status: hd?.trangThai === 'COMPLETED' ? OrderStatus.COMPLETED : OrderStatus.PENDING,
+      status: hd?.trangThai === 'CANCELLED'
+        ? OrderStatus.CANCELLED
+        : hd?.trangThai === 'COMPLETED'
+          ? OrderStatus.COMPLETED
+          : OrderStatus.PENDING,
       createdAt: hd?.ngayLap ? new Date(hd.ngayLap) : new Date(),
       // ✅ CÀN QUÉT MỌI TÊN TRƯỜNG CÓ THỂ CÓ TỪ BACKEND
       rawDetails: hd?.chiTietHoaDons || hd?.chiTietHoaDon || hd?.chiTietList || hd?.chiTiets || hd?.items || hd?.details || [] 

@@ -152,10 +152,17 @@ export interface SaveSanPhamRequest {
 export interface BackendHoaDon {
   hoaDonId: number;
   ngayLap: string;
+  maHoaDon?: string | null;
+  kenhBan?: string | null;
+  phuongThucThanhToan?: string | null;
+  ghiChu?: string | null;
   tamTinh: number;
   chietKhau: number;
   tongPhaiThanhToan: number;
   trangThai: string;
+  ngayHuy?: string | null;
+  lyDoHuy?: string | null;
+  nguoiHuy?: string | null;
   // Thêm các thông tin liên quan
   cuaHang?: { tenCuaHang: string };
   nhanVien?: { hoTen: string };
@@ -173,6 +180,93 @@ export interface BackendHoaDon {
     };
   }[];
 }
+
+export interface BackendHoaDonDTO {
+  hoaDonId: number;
+  maHoaDon?: string | null;
+  kenhBan?: string | null;
+  cuaHangId?: number | null;
+  tenCuaHang?: string | null;
+  khachHangId?: number | null;
+  tenKhachHang?: string | null;
+  dienThoaiKhachHang?: string | null;
+  nhanVienId?: number | null;
+  tenNhanVien?: string | null;
+  ngayLap: string;
+  phuongThucThanhToan?: string | null;
+  ghiChu?: string | null;
+  tamTinh?: number | null;
+  tienThue?: number | null;
+  chietKhau?: number | null;
+  phiShip?: number | null;
+  tongPhaiThanhToan?: number | null;
+  trangThai?: string | null;
+  ngayHuy?: string | null;
+  lyDoHuy?: string | null;
+  nguoiHuy?: string | null;
+}
+
+export const orderAPI = {
+  getAll: () => apiClient.get<BackendHoaDonDTO[]>('/api/v1/hoa-don'),
+  create: (data: any) => apiClient.post('/api/v1/hoa-don', data),
+
+  query: (params?: {
+    storeId?: number;
+    channel?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) => apiClient.get<BackendHoaDonDTO[]>('/api/v1/hoa-don/query', { params }),
+
+  exportExcel: (params?: {
+    storeId?: number;
+    channel?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) => apiClient.get('/api/v1/hoa-don/export', { params, responseType: 'blob' }),
+
+  cancel: (id: number, params?: { reason?: string; cancelledBy?: string }) =>
+    apiClient.put(`/api/v1/hoa-don/${id}/cancel`, null, { params }),
+};
+
+export interface BackendOrderHistoryRow {
+  id: number;
+  maGD: string;
+  thoiGian: string;
+  loaiGD: string;
+  doiTuong?: string | null;
+  giaTri: number;
+  phuongThuc?: string | null;
+  nhanVien?: string | null;
+}
+
+export const orderHistoryAPI = {
+  getAll: (params?: { from?: string; to?: string; keyword?: string }) =>
+    apiClient.get<BackendOrderHistoryRow[]>('/api/v1/order-history', { params }),
+  exportExcel: (params?: { from?: string; to?: string; keyword?: string }) =>
+    apiClient.get('/api/v1/order-history/export', { params, responseType: 'blob' }),
+};
+
+export interface BackendBienTheSanPham {
+  bienTheId: number;
+  sanPham?: { sanPhamId: number } | null;
+  tenBienThe?: string | null;
+  maSku?: string | null;
+  giaBan?: number | null;
+  giaNhap?: number | null;
+  maVach?: string | null;
+  hoatDong?: boolean | null;
+}
+
+export const variantAPI = {
+  getByProductId: (sanPhamId: number) =>
+    apiClient.get<BackendBienTheSanPham[]>(`/api/v1/bien-the-san-pham/san-pham/${sanPhamId}`),
+  create: (payload: any) => apiClient.post('/api/v1/bien-the-san-pham', payload),
+  delete: (id: number) => apiClient.delete(`/api/v1/bien-the-san-pham/${id}`),
+};
 
 export const productAPI = {
   getAll: () => apiClient.get<BackendSanPham[]>('/api/v1/san-pham'),
@@ -197,11 +291,6 @@ export const productAPI = {
 
   delete: (id: string | number) =>
     apiClient.delete<void>(`/api/v1/san-pham/${id}`),
-};
-
-export const orderAPI = {
-  getAll: () => apiClient.get<BackendHoaDon[]>('/api/v1/hoa-don'),
-  create: (data: SaveHoaDonRequest) => apiClient.post<BackendHoaDon>('/api/v1/hoa-don', data),
 };
 
 // ==== Promotions API ====
