@@ -1,26 +1,84 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip
+  Checkbox, Chip, Dialog, DialogTitle, DialogContent, DialogActions
 } from '@mui/material';
 import {
   Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
   FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Edit as EditIcon, SettingsBackupRestore as RestoreIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu Đơn vị tính (Cái, Thùng, Lốc...)
-const mockUnits = [
-  { no: 1, maDVT: 'CAI', tenDVT: 'Cái', moTa: 'Đơn vị tính cơ bản (bán lẻ)', trangThai: 'Sử dụng' },
-  { no: 2, maDVT: 'THUNG', tenDVT: 'Thùng', moTa: 'Đóng gói lớn (VD: Thùng 24 lon)', trangThai: 'Sử dụng' },
-  { no: 3, maDVT: 'LOC', tenDVT: 'Lốc', moTa: 'Đóng gói vừa (VD: Lốc 6 chai)', trangThai: 'Sử dụng' },
-  { no: 4, maDVT: 'KG', tenDVT: 'Kilogram', moTa: 'Đơn vị đo khối lượng', trangThai: 'Sử dụng' },
-  { no: 5, maDVT: 'HOP', tenDVT: 'Hộp', moTa: 'Đóng gói theo hộp', trangThai: 'Ngừng dùng' },
-];
+import { unitAPI, type BackendDonVi } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
 
 export const UnitsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [units, setUnits] = useState<BackendDonVi[]>([]);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editingUnit, setEditingUnit] = useState<BackendDonVi | null>(null);
+  const [name, setName] = useState('');
+  const { showToast } = useToastStore();
+
+  useEffect(() => {
+    void loadUnits();
+  }, []);
+
+  const loadUnits = async () => {
+    try {
+      const res = await unitAPI.getAll();
+      setUnits(res.data || []);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách đơn vị', 'error');
+    }
+  };
+
+  const filteredUnits = units.filter(u =>
+    u.tenDonVi.toLowerCase().includes(searchQuery.toLowerCase()),
+  );
+
+  const handleOpenDialog = (unit?: BackendDonVi) => {
+    if (unit) {
+      setEditingUnit(unit);
+      setName(unit.tenDonVi);
+    } else {
+      setEditingUnit(null);
+      setName('');
+    }
+    setOpenDialog(true);
+  };
+
+  const handleSave = async () => {
+    if (!name.trim()) {
+      showToast('Tên đơn vị là bắt buộc', 'warning');
+      return;
+    }
+    try {
+      if (editingUnit) {
+        await unitAPI.update(editingUnit.donViId, { tenDonVi: name.trim() });
+        showToast('Cập nhật đơn vị thành công', 'success');
+      } else {
+        await unitAPI.create({ tenDonVi: name.trim() });
+        showToast('Thêm đơn vị thành công', 'success');
+      }
+      setOpenDialog(false);
+      setName('');
+      await loadUnits();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu đơn vị', 'error');
+    }
+  };
+
+  const handleDelete = async (unit: BackendDonVi) => {
+    if (!window.confirm(`Xóa đơn vị "${unit.tenDonVi}"?`)) return;
+    try {
+      await unitAPI.delete(unit.donViId);
+      showToast('Xóa đơn vị thành công', 'success');
+      await loadUnits();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi xóa đơn vị', 'error');
+    }
+  };
 
   return (
     <Box className="fade-in">
@@ -35,13 +93,21 @@ export const UnitsPage: React.FC = () => {
           
           {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
+            <TextField
               size="small" placeholder="Tìm: Mã ĐVT/Tên ĐVT..." 
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm ĐVT</Button>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+              sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}
+            >
+              Thêm ĐVT
+            </Button>
             <Button size="small" variant="contained" startIcon={<RestoreIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Khôi phục</Button>
             <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Danh Sách</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
@@ -71,25 +137,43 @@ export const UnitsPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {mockUnits.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {filteredUnits.map((row, index) => (
+                  <TableRow key={row.donViId} hover sx={{ '&:last-child td': { border: 0 } }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                        <Box sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
+                        <Box
+                          sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex', mr: 0.5 }}
+                          onClick={() => handleOpenDialog(row)}
+                        >
+                          <EditIcon sx={{ fontSize: 14 }} />
+                        </Box>
+                        <Box
+                          sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}
+                          onClick={() => handleDelete(row)}
+                        >
+                          <DeleteIcon sx={{ fontSize: 14 }} />
+                        </Box>
                       </Box>
                     </TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{row.maDVT}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 700, p: 1.5 }}>{row.tenDVT}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5, fontStyle: 'italic' }}>{row.moTa}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>
+                      {row.donViId}
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 700, p: 1.5 }}>
+                      {row.tenDonVi}
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5, fontStyle: 'italic' }}>
+                      ---
+                    </TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      {row.trangThai === 'Sử dụng' ? 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                      }
+                      <Chip
+                        label="Sử dụng"
+                        size="small"
+                        sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }}
+                      />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -99,10 +183,33 @@ export const UnitsPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {mockUnits.length} of {mockUnits.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+              {filteredUnits.length} đơn vị
+             </Typography>
           </Box>
         </CardContent>
       </Card>
+
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>
+          {editingUnit ? 'CẬP NHẬT ĐƠN VỊ' : 'THÊM ĐƠN VỊ MỚI'}
+        </DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <TextField
+            fullWidth
+            size="small"
+            label="Tên đơn vị tính"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleSave}>
+            Lưu
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

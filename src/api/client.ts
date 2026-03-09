@@ -1,364 +1,38 @@
-import axios, { AxiosError, AxiosInstance } from 'axios';
+import axios from 'axios';
 
-const API_BASE_URL = 'http://localhost:8080';
+// ================== AXIOS INSTANCE ==================
 
-export const AUTH_API_BASE = `${API_BASE_URL}/api/auth`;
-export const BUSINESS_API_BASE = `${API_BASE_URL}/api/v1`;
+const BASE_URL =
+  (typeof import.meta !== 'undefined' &&
+    (import.meta as any).env &&
+    (import.meta as any).env.VITE_API_BASE_URL) ||
+  'http://localhost:8080';
 
-const apiClient: AxiosInstance = axios.create({
-  baseURL: API_BASE_URL,
-  timeout: 10000,
-  headers: {
-    'Content-Type': 'application/json',
-  },
+const api = axios.create({
+  baseURL: BASE_URL,
+  withCredentials: false,
 });
 
-export const getToken = (): string | null => {
-  if (typeof window === 'undefined') return null;
-  return localStorage.getItem('token');
-};
+const V1_PREFIX = '/api/v1';
 
-export const setToken = (token: string) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem('token', token);
-};
+// ================== COMMON TYPES ==================
 
-export const clearAuth = () => {
-  if (typeof window === 'undefined') return;
-  localStorage.removeItem('token');
-};
-
-export const isAuthenticated = () => !!getToken();
-
-apiClient.interceptors.request.use(
-  (config) => {
-    const token = getToken();
-    if (token) {
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
-      config.headers = config.headers ?? {};
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  },
-  (error) => Promise.reject(error)
-);
-
-apiClient.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError<any>) => {
-    const status = error.response?.status;
-
-    if (status === 401) {
-      clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
-    }
-
-    const message =
-      (error.response?.data as any)?.message ??
-      error.message ??
-      'Có lỗi xảy ra. Vui lòng thử lại.';
-
-    return Promise.reject(
-      Object.assign(error, {
-        message,
-      })
-    );
-  }
-);
-
-// ==== Auth API types (phù hợp với backend) ====
-
-interface BackendLoginResponseData {
-  accessToken: string;
-  tokenType: string;
-}
-
-interface BackendBaseResponse<T = unknown> {
+export interface ApiResponse<T> {
   success: boolean;
   message: string;
   data: T;
 }
 
-export const authAPI = {
-  async login(email: string, password: string): Promise<BackendBaseResponse<BackendLoginResponseData>> {
-    const response = await apiClient.post<BackendBaseResponse<BackendLoginResponseData>>('/api/auth/login', {
-      email,
-      password,
-    });
-
-    if (response.data.success && response.data.data?.accessToken) {
-      setToken(response.data.data.accessToken);
-    }
-
-    return response.data;
-  },
-
-  async register(userData: Record<string, unknown>): Promise<BackendBaseResponse<null>> {
-    const response = await apiClient.post<BackendBaseResponse<null>>('/api/auth/register', userData);
-    return response.data;
-  },
-
-  async logout(): Promise<void> {
-    try {
-      await apiClient.post('/api/auth/logout');
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.error('Logout error:', err);
-    } finally {
-      clearAuth();
-    }
-  },
-};
-export const uploadAPI = (file: File, folder = "products") => {
-  const formData = new FormData();
-  formData.append("file", file);
-  // Sử dụng apiClient để tự động đính kèm Token
-  return apiClient.post(`/api/v1/cloudinary/upload?folder=${folder}`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-};
-// ==== Business API helpers ====
-
-// Kiểu trả về cơ bản từ backend cho các entity thuần (không bọc success/message)
-export interface BackendSanPham {
-  sanPhamId: number;
-  maSku: string;
-  tenSanPham: string;
-  giaBan: number;
-  giaNhap: number | null;
-  maVach: string | null;
-  moTa: string | null;
-  hoatDong: boolean;
-  danhMuc?: {
-  id: number;      // Đổi từ danhMucId thành id
-    name: string;    // Đổi từ tenDanhMuc thành name
-  } | null;
-}
-export interface SaveSanPhamRequest {
-  maSku: string;
-  tenSanPham: string;
-  moTa?: string;
-  danhMucId: number; // Đảm bảo Backend nhận kiểu Integer/Long
-  donViId: number;
-  giaBan: number;
-  giaNhap?: number;
-  maVach?: string;
-  thuongHieu?: string;
-  hoatDong: boolean;
-  hinhAnhUrls: string[]; // Backend mong đợi một mảng chuỗi
-}
-export interface BackendHoaDon {
-  hoaDonId: number;
-  ngayLap: string;
-  maHoaDon?: string | null;
-  kenhBan?: string | null;
-  phuongThucThanhToan?: string | null;
-  ghiChu?: string | null;
-  tamTinh: number;
-  chietKhau: number;
-  tongPhaiThanhToan: number;
-  trangThai: string;
-  ngayHuy?: string | null;
-  lyDoHuy?: string | null;
-  nguoiHuy?: string | null;
-  // Thêm các thông tin liên quan
-  cuaHang?: { tenCuaHang: string };
-  nhanVien?: { hoTen: string };
-  khachHang?: { hoTen: string; dienThoai: string };
-  // ✅ Cấu trúc chi tiết hóa đơn để lấy tên và số lượng
-  chiTietHoaDons?: {
-    soLuong: number;
-    donGia: number;
-    thanhTien: number;
-    bienThe?: {
-      tenBienThe: string;
-      sanPham?: {
-        tenSanPham: string;
-      };
-    };
-  }[];
+// Simple Spring Page wrapper used by activity logs
+export interface Page<T> {
+  content: T[];
+  totalElements: number;
+  totalPages: number;
+  number: number;
+  size: number;
 }
 
-export interface BackendHoaDonDTO {
-  hoaDonId: number;
-  maHoaDon?: string | null;
-  kenhBan?: string | null;
-  cuaHangId?: number | null;
-  tenCuaHang?: string | null;
-  khachHangId?: number | null;
-  tenKhachHang?: string | null;
-  dienThoaiKhachHang?: string | null;
-  nhanVienId?: number | null;
-  tenNhanVien?: string | null;
-  ngayLap: string;
-  phuongThucThanhToan?: string | null;
-  ghiChu?: string | null;
-  tamTinh?: number | null;
-  tienThue?: number | null;
-  chietKhau?: number | null;
-  phiShip?: number | null;
-  tongPhaiThanhToan?: number | null;
-  trangThai?: string | null;
-  ngayHuy?: string | null;
-  lyDoHuy?: string | null;
-  nguoiHuy?: string | null;
-}
-
-export const orderAPI = {
-  getAll: () => apiClient.get<BackendHoaDonDTO[]>('/api/v1/hoa-don'),
-  create: (data: any) => apiClient.post('/api/v1/hoa-don', data),
-
-  query: (params?: {
-    storeId?: number;
-    channel?: string;
-    status?: string;
-    from?: string;
-    to?: string;
-    keyword?: string;
-  }) => apiClient.get<BackendHoaDonDTO[]>('/api/v1/hoa-don/query', { params }),
-
-  exportExcel: (params?: {
-    storeId?: number;
-    channel?: string;
-    status?: string;
-    from?: string;
-    to?: string;
-    keyword?: string;
-  }) => apiClient.get('/api/v1/hoa-don/export', { params, responseType: 'blob' }),
-
-  cancel: (id: number, params?: { reason?: string; cancelledBy?: string }) =>
-    apiClient.put(`/api/v1/hoa-don/${id}/cancel`, null, { params }),
-};
-
-export interface BackendOrderHistoryRow {
-  id: number;
-  maGD: string;
-  thoiGian: string;
-  loaiGD: string;
-  doiTuong?: string | null;
-  giaTri: number;
-  phuongThuc?: string | null;
-  nhanVien?: string | null;
-}
-
-export const orderHistoryAPI = {
-  getAll: (params?: { from?: string; to?: string; keyword?: string }) =>
-    apiClient.get<BackendOrderHistoryRow[]>('/api/v1/order-history', { params }),
-  exportExcel: (params?: { from?: string; to?: string; keyword?: string }) =>
-    apiClient.get('/api/v1/order-history/export', { params, responseType: 'blob' }),
-};
-
-export interface BackendBienTheSanPham {
-  bienTheId: number;
-  sanPham?: { sanPhamId: number } | null;
-  tenBienThe?: string | null;
-  maSku?: string | null;
-  giaBan?: number | null;
-  giaNhap?: number | null;
-  maVach?: string | null;
-  hoatDong?: boolean | null;
-}
-
-export const variantAPI = {
-  getByProductId: (sanPhamId: number) =>
-    apiClient.get<BackendBienTheSanPham[]>(`/api/v1/bien-the-san-pham/san-pham/${sanPhamId}`),
-  create: (payload: any) => apiClient.post('/api/v1/bien-the-san-pham', payload),
-  delete: (id: number) => apiClient.delete(`/api/v1/bien-the-san-pham/${id}`),
-};
-
-export const productAPI = {
-  getAll: () => apiClient.get<BackendSanPham[]>('/api/v1/san-pham'),
-
-  getActive: () =>
-    apiClient.get<BackendSanPham[]>('/api/v1/san-pham/active'),
-
-  search: (keyword: string) =>
-    apiClient.get<BackendSanPham[]>('/api/v1/san-pham/search', {
-      params: { keyword },
-    }),
-
-  getById: (id: number) =>
-    apiClient.get<BackendSanPham>(`/api/v1/san-pham/${id}`),
-
-  // ✅ ADD NEW
-  create: (data: SaveSanPhamRequest) =>
-    apiClient.post<BackendSanPham>('/api/v1/san-pham', data),
-
-  update: (id: string | number, data: SaveSanPhamRequest) =>
-    apiClient.put<BackendSanPham>(`/api/v1/san-pham/${id}`, data),
-
-  delete: (id: string | number) =>
-    apiClient.delete<void>(`/api/v1/san-pham/${id}`),
-};
-
-// ==== Promotions API ====
-
-export interface BackendPromotion {
-  id: number;
-  code: string;
-  name: string;
-  description?: string | null;
-  discountType: 'PERCENTAGE' | 'FIXED';
-  discountValue: number;
-  minPurchase?: number | null;
-  maxDiscount?: number | null;
-  startDate: string; // ISO date (yyyy-MM-dd)
-  endDate: string;   // ISO date
-  active: boolean;
-  createdAt?: string;
-  updatedAt?: string;
-}
-
-export const promotionAPI = {
-  getAll: () => apiClient.get<BackendBaseResponse<BackendPromotion[]>>('/api/v1/khuyen-mai'),
-  getActive: () => apiClient.get<BackendBaseResponse<BackendPromotion[]>>('/api/v1/khuyen-mai/active'),
-  create: (data: Omit<BackendPromotion, 'id' | 'createdAt' | 'updatedAt'>) =>
-    apiClient.post<BackendBaseResponse<BackendPromotion>>('/api/v1/khuyen-mai', data),
-  update: (id: number, data: Omit<BackendPromotion, 'id' | 'createdAt' | 'updatedAt'>) =>
-    apiClient.put<BackendBaseResponse<BackendPromotion>>(`/api/v1/khuyen-mai/${id}`, data),
-  delete: (id: number) => apiClient.delete<BackendBaseResponse<void>>(`/api/v1/khuyen-mai/${id}`),
-};
-
-// ==== Categories API ====
-
-// Sửa lại interface này trong client.ts
-export interface BackendCategory {
-  id: number;      // Thay vì danhMucId
-  name: string;    // Thay vì tenDanhMuc
-  description?: string | null;
-  parentId?: number | null;
-  image?: string | null;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
-}
-export interface SaveSanPhamRequest {
-  maSku: string;       // Mã định danh sản phẩm (SKU)
-  tenSanPham: string;  // Tên sản phẩm
-  moTa?: string;       // Mô tả (có thể để trống)
-  danhMucId: number;   // ID của danh mục (Bắt buộc để tránh lỗi null)
-  giaBan: number;      // Giá bán ra
-  giaNhap?: number;    // Giá nhập vào
-  maVach?: string;     // Mã vạch
-  hoatDong: boolean;   // Trạng thái hoạt động (true/false)
-}
-export const categoryAPI = {
-  getAll: (parentId?: number) =>
-    apiClient.get<BackendBaseResponse<BackendCategory[]>>('/api/v1/danh-muc', {
-      params: parentId ? { parentId } : {},
-    }),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendCategory>>(`/api/v1/danh-muc/${id}`),
-  create: (data: { name: string; description?: string; parentId?: number; isActive?: boolean }) =>
-    apiClient.post<BackendBaseResponse<BackendCategory>>('/api/v1/danh-muc', data),
-  update: (id: number, data: { name: string; description?: string; parentId?: number; isActive?: boolean }) =>
-    apiClient.put<BackendBaseResponse<BackendCategory>>(`/api/v1/danh-muc/${id}`, data),
-  delete: (id: number) => apiClient.delete<BackendBaseResponse<void>>(`/api/v1/danh-muc/${id}`),
-};
-
-// ==== Stores API ====
+// ================== BACKEND DTO TYPES ==================
 
 export interface BackendStore {
   id: number;
@@ -373,19 +47,6 @@ export interface BackendStore {
   updatedAt: string;
 }
 
-export const storeAPI = {
-  getAll: () => apiClient.get<BackendBaseResponse<BackendStore[]>>('/api/v1/cua-hang'),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendStore>>(`/api/v1/cua-hang/${id}`),
-  create: (data: { code: string; name: string; address: string; phone: string; email?: string; isActive?: boolean }) =>
-    apiClient.post<BackendBaseResponse<BackendStore>>('/api/v1/cua-hang', data),
-  update: (id: number, data: { code?: string; name?: string; address?: string; phone?: string; email?: string; isActive?: boolean }) =>
-    apiClient.put<BackendBaseResponse<BackendStore>>(`/api/v1/cua-hang/${id}`, data),
-  delete: (id: number) => apiClient.delete<BackendBaseResponse<void>>(`/api/v1/cua-hang/${id}`),
-};
-
-// ==== Users API ====
-
 export interface BackendUser {
   id: number;
   email: string;
@@ -399,44 +60,50 @@ export interface BackendUser {
   updatedAt: string;
 }
 
-export const userAPI = {
-  getAll: (role?: string, storeId?: number) =>
-    apiClient.get<BackendBaseResponse<BackendUser[]>>('/api/v1/users', {
-      params: { role, storeId },
-    }),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendUser>>(`/api/v1/users/${id}`),
-  create: (data: { email: string; password: string; fullName: string; phone: string; role: string; storeId?: number }) =>
-    apiClient.post<BackendBaseResponse<BackendUser>>('/api/v1/users', data),
-  update: (id: number, data: { fullName?: string; phone?: string; role?: string; storeId?: number; password?: string; isActive?: boolean }) =>
-    apiClient.put<BackendBaseResponse<BackendUser>>(`/api/v1/users/${id}`, data),
-  toggleActive: (id: number) =>
-    apiClient.put<BackendBaseResponse<BackendUser>>(`/api/v1/users/${id}/toggle-active`),
-  delete: (id: number) => apiClient.delete<BackendBaseResponse<void>>(`/api/v1/users/${id}`),
-};
-
-// ==== Dashboard Stats API ====
-
-export interface DashboardStats {
-  totalRevenue: number;
-  totalOrders: number;
-  totalProducts: number;
-  lowStockProducts: number;
-  pendingRecommendations: number;
-  revenueGrowth: number;
-  orderGrowth: number;
+export interface BackendCategory {
+  id: number;
+  name: string;
+  description?: string | null;
+  parentId?: number | null;
+  imageUrl?: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }
 
-export const dashboardAPI = {
-  getStats: (storeId?: number, startDate?: string, endDate?: string) =>
-    apiClient.get<BackendBaseResponse<DashboardStats>>('/api/v1/dashboard/stats', {
-      params: { storeId, startDate, endDate },
-    }),
-};
+export interface BackendSanPham {
+  sanPhamId: number;
+  maSku: string;
+  tenSanPham: string;
+  danhMucId?: number | null;
+  tenDanhMuc?: string | null;
+  donViId?: number | null;
+  tenDonVi?: string | null;
+  thuongHieu?: string | null;
+  giaBan?: number | null;
+  giaNhap?: number | null;
+  maVach?: string | null;
+  moTa?: string | null;
+  hoatDong: boolean;
+  hinhAnhUrls?: string[] | null;
+}
 
-// ==== Voucher API ====
+export interface BackendInventory {
+  id: number;
+  storeId: number;
+  productId: number;
+  quantity: number;
+  minStock: number;
+  maxStock?: number | null;
+  lastUpdated: string;
+}
 
-export interface BackendVoucher {
+export interface BackendDonVi {
+  donViId: number;
+  tenDonVi: string;
+}
+
+export interface BackendPromotion {
   id: number;
   code: string;
   name: string;
@@ -447,44 +114,62 @@ export interface BackendVoucher {
   maxDiscount?: number | null;
   startDate: string;
   endDate: string;
-  maxUsage?: number | null;
-  maxUsagePerUser?: number | null;
-  currentUsage: number;
-  isActive: boolean;
-  createdAt: string;
-  updatedAt: string;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
-export interface VoucherValidationRequest {
-  code: string;
-  orderAmount: number;
-  userId?: number;
-}
-
-export interface VoucherValidationResponse {
-  isValid: boolean;
+export interface BackendNotification {
+  id: number;
+  userId: number;
+  type: string;
+  title: string;
   message: string;
-  discountAmount: number;
-  voucher?: BackendVoucher;
+  link?: string | null;
+  isRead: boolean;
+  createdAt: string;
 }
 
-export const voucherAPI = {
-  getAll: () => apiClient.get<BackendBaseResponse<BackendVoucher[]>>('/api/v1/voucher'),
-  getActive: () => apiClient.get<BackendBaseResponse<BackendVoucher[]>>('/api/v1/voucher/active'),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendVoucher>>(`/api/v1/voucher/${id}`),
-  getByCode: (code: string) =>
-    apiClient.get<BackendBaseResponse<BackendVoucher>>(`/api/v1/voucher/code/${code}`),
-  create: (data: Omit<BackendVoucher, 'id' | 'currentUsage' | 'createdAt' | 'updatedAt'>) =>
-    apiClient.post<BackendBaseResponse<BackendVoucher>>('/api/v1/voucher', data),
-  update: (id: number, data: Omit<BackendVoucher, 'id' | 'currentUsage' | 'createdAt' | 'updatedAt'>) =>
-    apiClient.put<BackendBaseResponse<BackendVoucher>>(`/api/v1/voucher/${id}`, data),
-  delete: (id: number) => apiClient.delete<BackendBaseResponse<void>>(`/api/v1/voucher/${id}`),
-  validate: (data: VoucherValidationRequest) =>
-    apiClient.post<BackendBaseResponse<VoucherValidationResponse>>('/api/v1/voucher/validate', data),
-};
+export interface BackendWorkShift {
+  id: number;
+  storeId: number;
+  userId: number;
+  shiftDate: string; // yyyy-MM-dd
+  startTime: string; // HH:mm
+  endTime?: string | null; // HH:mm
+  notes?: string | null;
+  createdAt: string;
+}
 
-// ==== AI Agent API ====
+export interface BackendHoaDonDTO {
+  hoaDonId: number;
+  maHoaDon?: string | null;
+  ngayLap: string;
+  tenKhachHang?: string | null;
+  dienThoaiKhachHang?: string | null;
+  kenhBan?: string | null;
+  tamTinh?: number | null;
+  chietKhau?: number | null;
+  tongPhaiThanhToan?: number | null;
+  tenNhanVien?: string | null;
+  tenCuaHang?: string | null;
+  trangThai?: string | null;
+  // Hủy đơn
+  lyDoHuy?: string | null;
+  nguoiHuy?: string | null;
+  ngayHuy?: string | null;
+}
+
+export interface BackendOrderHistoryRow {
+  id: number;
+  maGD: string;
+  thoiGian: string;
+  loaiGD: string;
+  doiTuong?: string | null;
+  giaTri: number;
+  phuongThuc?: string | null;
+  nhanVien?: string | null;
+}
 
 export interface BackendAIRecommendation {
   id: number;
@@ -494,7 +179,7 @@ export interface BackendAIRecommendation {
   title: string;
   message: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-  data?: Record<string, any>;
+  data?: Record<string, any> | null;
   isRead: boolean;
   isResolved: boolean;
   createdAt: string;
@@ -511,43 +196,16 @@ export interface BackendDemandPrediction {
   period: string;
 }
 
-export const aiAPI = {
-  getRecommendations: (storeId?: number, type?: string, priority?: string, isResolved?: boolean) =>
-    apiClient.get<BackendBaseResponse<BackendAIRecommendation[]>>('/api/v1/ai/recommendations', {
-      params: { storeId, type, priority, isResolved },
-    }),
-  getPredictions: (storeId?: number) =>
-    apiClient.get<BackendBaseResponse<BackendDemandPrediction[]>>('/api/v1/ai/predictions', {
-      params: { storeId },
-    }),
-  predictDemand: (storeId?: number, days?: number) =>
-    apiClient.post<BackendBaseResponse<BackendDemandPrediction[]>>('/api/v1/ai/predict-demand', null, {
-      params: { storeId, days },
-    }),
-  analyzeSales: (storeId?: number, productId?: number, days?: number) =>
-    apiClient.post<BackendBaseResponse<any>>('/api/v1/ai/analyze-sales', null, {
-      params: { storeId, productId, days },
-    }),
-  markAsRead: (id: number) =>
-    apiClient.put<BackendBaseResponse<BackendAIRecommendation>>(`/api/v1/ai/recommendations/${id}/read`),
-  markAsResolved: (id: number) =>
-    apiClient.put<BackendBaseResponse<BackendAIRecommendation>>(`/api/v1/ai/recommendations/${id}/resolve`),
-  triggerWorkflow: (workflowName: string, data?: Record<string, any>) =>
-    apiClient.post<BackendBaseResponse<void>>('/api/v1/ai/trigger', data, {
-      params: { workflowName },
-    }),
-};
-
-// ==== Settings API ====
-
-export interface UpdateProfileRequest {
-  fullName?: string;
-  phone?: string;
-}
-
-export interface ChangePasswordRequest {
-  currentPassword: string;
-  newPassword: string;
+export interface BackendActivityLog {
+  id: number;
+  userId: number;
+  action: string;
+  entityType: string;
+  entityId: string;
+  details?: Record<string, any> | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+  createdAt: string;
 }
 
 export interface NotificationSettings {
@@ -557,230 +215,536 @@ export interface NotificationSettings {
   aiRecommendations: boolean;
 }
 
-export const settingsAPI = {
-  getCurrentUser: () =>
-    apiClient.get<BackendBaseResponse<BackendUser>>('/api/v1/users/me'),
-  updateProfile: (data: UpdateProfileRequest) =>
-    apiClient.put<BackendBaseResponse<BackendUser>>('/api/v1/users/me', data),
-  changePassword: (data: ChangePasswordRequest) =>
-    apiClient.put<BackendBaseResponse<void>>('/api/v1/users/me/password', data),
-  getNotificationSettings: () =>
-    apiClient.get<BackendBaseResponse<NotificationSettings>>('/api/v1/users/me/settings'),
-  updateNotificationSettings: (data: NotificationSettings) =>
-    apiClient.put<BackendBaseResponse<void>>('/api/v1/users/me/settings', data),
-};
-
-// ==== Notifications API ====
-
-export interface BackendNotification {
-  id: number;
-  userId: number;
-  type: string;
-  title: string;
-  message: string;
-  link?: string | null;
-  isRead: boolean;
-  createdAt: string;
+export interface BackendSupplier {
+  nhaCungCapId: number;
+  tenNhaCungCap: string;
+  dienThoai?: string | null;
+  email?: string | null;
+  diaChi?: string | null;
+  nguoiLienHe?: string | null;
+  maSoThue?: string | null;
+  trangThai?: string | null;
 }
 
-export const notificationAPI = {
-  getAll: (isRead?: boolean) =>
-    apiClient.get<BackendBaseResponse<BackendNotification[]>>('/api/v1/notifications', {
-      params: isRead !== undefined ? { isRead } : {},
-    }),
-  create: (data: { userId: number; type: string; title: string; message: string; link?: string }) =>
-    apiClient.post<BackendBaseResponse<BackendNotification>>('/api/v1/notifications', data),
-  markAsRead: (id: number) =>
-    apiClient.put<BackendBaseResponse<BackendNotification>>(`/api/v1/notifications/${id}/read`),
-  markAllAsRead: () =>
-    apiClient.put<BackendBaseResponse<void>>('/api/v1/notifications/read-all'),
+// ================== STORE API ==================
+
+export const storeAPI = {
+  getAll: () =>
+    api.get<ApiResponse<BackendStore[]>>(`${V1_PREFIX}/cua-hang`),
+
+  getById: (id: number) =>
+    api.get<ApiResponse<BackendStore>>(`${V1_PREFIX}/cua-hang/${id}`),
+
+  create: (payload: {
+    code: string;
+    name: string;
+    address: string;
+    phone: string;
+    email?: string;
+    isActive?: boolean;
+  }) => api.post<ApiResponse<BackendStore>>(`${V1_PREFIX}/cua-hang`, payload),
+
+  update: (
+    id: number,
+    payload: {
+      name: string;
+      address: string;
+      phone: string;
+      email?: string;
+      isActive?: boolean;
+    },
+  ) =>
+    api.put<ApiResponse<BackendStore>>(
+      `${V1_PREFIX}/cua-hang/${id}`,
+      payload,
+    ),
+
   delete: (id: number) =>
-    apiClient.delete<BackendBaseResponse<void>>(`/api/v1/notifications/${id}`),
+    api.delete<ApiResponse<void>>(`${V1_PREFIX}/cua-hang/${id}`),
 };
 
-// ==== ActivityLogs API ====
+// ================== USER API ==================
 
-export interface BackendActivityLog {
-  id: number;
-  userId: number;
-  action: string;
-  entityType: string;
-  entityId: string;
-  details?: Record<string, any>;
-  ipAddress?: string | null;
-  userAgent?: string | null;
-  createdAt: string;
-}
-
-export interface PaginatedResponse<T> {
-  content: T[];
-  totalElements: number;
-  totalPages: number;
-  page: number;
-  size: number;
-}
-
-export const activityLogAPI = {
-  getAll: (userId?: number, action?: string, entityType?: string, search?: string, page = 0, size = 20) =>
-    apiClient.get<BackendBaseResponse<PaginatedResponse<BackendActivityLog>>>('/api/v1/activity-logs', {
-      params: { userId, action, entityType, search, page, size },
+export const userAPI = {
+  getAll: (params?: { role?: string; storeId?: number }) =>
+    api.get<ApiResponse<BackendUser[]>>(`${V1_PREFIX}/users`, {
+      params,
     }),
+
+  getById: (id: string | number) =>
+    api.get<ApiResponse<BackendUser>>(`${V1_PREFIX}/users/${id}`),
+
+  create: (payload: {
+    fullName: string;
+    email: string;
+    password: string;
+    phone?: string;
+    role: string;
+    storeId?: number;
+  }) => api.post<ApiResponse<BackendUser>>(`${V1_PREFIX}/users`, payload),
+
+  update: (
+    id: string | number,
+    payload: {
+      fullName: string;
+      email: string;
+      password?: string;
+      phone?: string;
+      role: string;
+      storeId?: number;
+    },
+  ) =>
+    api.put<ApiResponse<BackendUser>>(
+      `${V1_PREFIX}/users/${id}`,
+      payload,
+    ),
+
+  toggleActive: (id: string | number) =>
+    api.put<ApiResponse<BackendUser>>(
+      `${V1_PREFIX}/users/${id}/toggle-active`,
+    ),
+
+  delete: (id: string | number) =>
+    api.delete<ApiResponse<void>>(`${V1_PREFIX}/users/${id}`),
 };
 
-// ==== Inventory API ====
+// ================== CATEGORY API ==================
 
-export interface BackendInventory {
-  id: number;
-  storeId: number;
-  storeName: string;
-  productId: number;
-  productName: string;
-  quantity: number;
-  minStock: number;
-  maxStock?: number | null;
-  lastUpdated: string;
-}
+export const categoryAPI = {
+  getAll: (params?: { parentId?: number }) =>
+    api.get<ApiResponse<BackendCategory[]>>(
+      `${V1_PREFIX}/danh-muc`,
+      { params },
+    ),
 
-export interface InventoryTransactionRequest {
-  storeId: number;
-  productId: number;
-  type: 'IMPORT' | 'EXPORT' | 'TRANSFER' | 'ADJUSTMENT';
-  quantity: number;
-  fromStoreId?: number;
-  toStoreId?: number;
-  reason?: string;
-}
+  create: (payload: {
+    name: string;
+    description?: string | null;
+    parentId?: number | null;
+  }) =>
+    api.post<ApiResponse<BackendCategory>>(
+      `${V1_PREFIX}/danh-muc`,
+      payload,
+    ),
 
-export interface BackendInventoryTransaction {
-  id: number;
-  storeId: number;
-  storeName: string;
-  productId: number;
-  productName: string;
-  type: string;
-  quantity: number;
-  fromStoreId?: number | null;
-  fromStoreName?: string | null;
-  toStoreId?: number | null;
-  toStoreName?: string | null;
-  reason?: string | null;
-  createdBy: number;
-  createdAt: string;
-}
+  update: (id: number, payload: Partial<BackendCategory>) =>
+    api.put<ApiResponse<BackendCategory>>(
+      `${V1_PREFIX}/danh-muc/${id}`,
+      payload,
+    ),
+
+  delete: (id: number) =>
+    api.delete<ApiResponse<void>>(`${V1_PREFIX}/danh-muc/${id}`),
+};
+
+// ================== PRODUCT API ==================
+
+export const productAPI = {
+  // Lấy tất cả sản phẩm (List<SanPham>)
+  getAll: () =>
+    api.get<BackendSanPham[]>(`${V1_PREFIX}/san-pham`),
+
+  // Tạo sản phẩm mới (SanPhamDTO)
+  create: (payload: {
+    maSku: string;
+    tenSanPham: string;
+    danhMucId: number;
+    donViId: number;
+    giaBan: number;
+    giaNhap?: number;
+    maVach?: string;
+    moTa?: string;
+    hoatDong: boolean;
+    thuongHieu?: string;
+    hinhAnhUrls?: string[];
+  }) =>
+    api.post(`${V1_PREFIX}/san-pham`, payload),
+
+  // Cập nhật sản phẩm
+  update: (
+    sanPhamId: number,
+    payload: {
+      maSku: string;
+      tenSanPham: string;
+      danhMucId: number;
+      donViId: number;
+      giaBan: number;
+      giaNhap?: number;
+      maVach?: string;
+      moTa?: string;
+      hoatDong: boolean;
+      thuongHieu?: string;
+      hinhAnhUrls?: string[];
+    },
+  ) =>
+    api.put(`${V1_PREFIX}/san-pham/${sanPhamId}`, payload),
+
+  delete: (sanPhamId: number) =>
+    api.delete(`${V1_PREFIX}/san-pham/${sanPhamId}`),
+};
+
+// ================== INVENTORY API ==================
 
 export const inventoryAPI = {
-  getAll: (storeId?: number, productId?: number) =>
-    apiClient.get<BackendBaseResponse<BackendInventory[]>>('/api/v1/inventory', {
-      params: { storeId, productId },
-    }),
-  getLowStock: () =>
-    apiClient.get<BackendBaseResponse<BackendInventory[]>>('/api/v1/inventory/low-stock'),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendInventory>>(`/api/v1/inventory/${id}`),
-  update: (id: number, minStock?: number, maxStock?: number) =>
-    apiClient.put<BackendBaseResponse<BackendInventory>>(`/api/v1/inventory/${id}`, null, {
-      params: { minStock, maxStock },
-    }),
-  createTransaction: (data: InventoryTransactionRequest) =>
-    apiClient.post<BackendBaseResponse<BackendInventoryTransaction>>('/api/v1/inventory/transaction', data),
+  getAll: (params?: { storeId?: number; productId?: number }) =>
+    api.get<ApiResponse<BackendInventory[]>>(
+      `${V1_PREFIX}/inventory`,
+      { params },
+    ),
+
+  createTransaction: (payload: {
+    storeId: number;
+    productId: number;
+    type: 'IMPORT' | 'EXPORT' | 'TRANSFER' | 'ADJUSTMENT';
+    quantity: number;
+    fromStoreId?: number;
+    toStoreId?: number;
+    reason?: string;
+  }) =>
+    api.post<ApiResponse<any>>(
+      `${V1_PREFIX}/inventory/transaction`,
+      payload,
+    ),
 };
 
-// ==== WorkShifts API ====
+// ================== SUPPLIER / NHÀ CUNG CẤP API ==================
 
-export interface BackendWorkShift {
-  id: number;
-  storeId: number;
-  storeName: string;
-  userId: number;
-  userName: string;
-  shiftDate: string;
-  startTime: string;
-  endTime?: string | null;
-  notes?: string | null;
-  createdAt: string;
-}
+export const supplierAPI = {
+  getAll: (params?: { keyword?: string }) =>
+    api.get<BackendSupplier[]>(
+      `${V1_PREFIX}/nha-cung-cap`,
+      { params },
+    ),
+
+  create: (payload: {
+    tenNhaCungCap: string;
+    dienThoai?: string;
+    email?: string;
+    diaChi?: string;
+    nguoiLienHe?: string;
+    maSoThue?: string;
+    trangThai?: string;
+  }) =>
+    api.post<BackendSupplier>(
+      `${V1_PREFIX}/nha-cung-cap`,
+      payload,
+    ),
+
+  update: (
+    id: number,
+    payload: {
+      tenNhaCungCap: string;
+      dienThoai?: string;
+      email?: string;
+      diaChi?: string;
+      nguoiLienHe?: string;
+      maSoThue?: string;
+      trangThai?: string;
+    },
+  ) =>
+    api.put<BackendSupplier>(
+      `${V1_PREFIX}/nha-cung-cap/${id}`,
+      payload,
+    ),
+
+  delete: (id: number) =>
+    api.delete<void>(`${V1_PREFIX}/nha-cung-cap/${id}`),
+};
+
+// ================== UNIT / ĐƠN VỊ API ==================
+
+export const unitAPI = {
+  getAll: () =>
+    api.get<BackendDonVi[]>(`${V1_PREFIX}/don-vi`),
+
+  create: (payload: { tenDonVi: string }) =>
+    api.post<BackendDonVi>(`${V1_PREFIX}/don-vi`, payload),
+
+  update: (id: number, payload: { tenDonVi: string }) =>
+    api.put<BackendDonVi>(`${V1_PREFIX}/don-vi/${id}`, payload),
+
+  delete: (id: number) =>
+    api.delete<void>(`${V1_PREFIX}/don-vi/${id}`),
+};
+
+// ================== PROMOTION API ==================
+
+export const promotionAPI = {
+  // KhuyenMaiController trả về List<KhuyenMai> (không bọc ApiResponse)
+  getAll: () =>
+    api.get<BackendPromotion[]>(`${V1_PREFIX}/khuyen-mai`),
+
+  create: (payload: Omit<BackendPromotion, 'id' | 'createdAt' | 'updatedAt'>) =>
+    api.post<BackendPromotion>(`${V1_PREFIX}/khuyen-mai`, payload),
+
+  update: (id: number, payload: Omit<BackendPromotion, 'id' | 'createdAt' | 'updatedAt'>) =>
+    api.put<BackendPromotion>(`${V1_PREFIX}/khuyen-mai/${id}`, payload),
+
+  delete: (id: number) =>
+    api.delete<void>(`${V1_PREFIX}/khuyen-mai/${id}`),
+};
+
+// ================== NOTIFICATION API ==================
+
+export const notificationAPI = {
+  getAll: (params?: { isRead?: boolean }) =>
+    api.get<ApiResponse<BackendNotification[]>>(
+      `${V1_PREFIX}/notifications`,
+      { params },
+    ),
+
+  create: (payload: {
+    userId: number;
+    type: string;
+    title: string;
+    message: string;
+    link?: string;
+  }) =>
+    api.post<ApiResponse<BackendNotification>>(
+      `${V1_PREFIX}/notifications`,
+      payload,
+    ),
+
+  markAsRead: (id: number) =>
+    api.put<ApiResponse<BackendNotification>>(
+      `${V1_PREFIX}/notifications/${id}/read`,
+    ),
+
+  markAllAsRead: () =>
+    api.put<ApiResponse<void>>(
+      `${V1_PREFIX}/notifications/read-all`,
+    ),
+
+  delete: (id: number) =>
+    api.delete<ApiResponse<void>>(
+      `${V1_PREFIX}/notifications/${id}`,
+    ),
+};
+
+// ================== WORK SHIFT API ==================
 
 export const workShiftAPI = {
-  getAll: (storeId?: number, userId?: number, shiftDate?: string) =>
-    apiClient.get<BackendBaseResponse<BackendWorkShift[]>>('/api/v1/work-shifts', {
-      params: { storeId, userId, shiftDate },
-    }),
-  getById: (id: number) =>
-    apiClient.get<BackendBaseResponse<BackendWorkShift>>(`/api/v1/work-shifts/${id}`),
-  create: (data: { storeId: number; userId: number; shiftDate: string; startTime: string; endTime?: string; notes?: string }) =>
-    apiClient.post<BackendBaseResponse<BackendWorkShift>>('/api/v1/work-shifts', data),
-  update: (id: number, data: { storeId?: number; userId?: number; shiftDate?: string; startTime?: string; endTime?: string; notes?: string }) =>
-    apiClient.put<BackendBaseResponse<BackendWorkShift>>(`/api/v1/work-shifts/${id}`, data),
+  getAll: (params?: {
+    storeId?: number;
+    userId?: number;
+    shiftDate?: string; // yyyy-MM-dd
+  }) =>
+    api.get<ApiResponse<BackendWorkShift[]>>(
+      `${V1_PREFIX}/work-shifts`,
+      { params },
+    ),
+
+  create: (payload: {
+    storeId: number;
+    userId: number;
+    shiftDate: string;
+    startTime: string;
+    endTime?: string;
+    notes?: string;
+  }) =>
+    api.post<ApiResponse<BackendWorkShift>>(
+      `${V1_PREFIX}/work-shifts`,
+      payload,
+    ),
+
+  update: (
+    id: number,
+    payload: {
+      storeId: number;
+      userId: number;
+      shiftDate: string;
+      startTime: string;
+      endTime?: string;
+      notes?: string;
+    },
+  ) =>
+    api.put<ApiResponse<BackendWorkShift>>(
+      `${V1_PREFIX}/work-shifts/${id}`,
+      payload,
+    ),
+
   delete: (id: number) =>
-    apiClient.delete<BackendBaseResponse<void>>(`/api/v1/work-shifts/${id}`),
+    api.delete<ApiResponse<void>>(
+      `${V1_PREFIX}/work-shifts/${id}`,
+    ),
 };
 
-// ==== Reports API ====
+// ================== ORDER / HÓA ĐƠN API ==================
 
-export interface RevenueReport {
-  period: string;
-  revenue: number;
-  orders: number;
-  averageOrderValue: number;
-  profit?: number;
-  profitMargin?: number;
-}
+export const orderAPI = {
+  // Tạo đơn từ POS
+  create: (payload: any) =>
+    api.post(`${V1_PREFIX}/hoa-don`, payload),
 
-export interface ProductSalesReport {
-  productId: number;
-  productName: string;
-  quantitySold: number;
-  revenue: number;
-  profit?: number;
-}
+  // Truy vấn danh sách đơn theo điều kiện
+  query: (params: {
+    storeId?: number;
+    channel?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) =>
+    api.get<BackendHoaDonDTO[]>(
+      `${V1_PREFIX}/hoa-don/query`,
+      { params },
+    ),
 
-export interface StoreComparison {
-  storeId: number;
-  storeName: string;
-  revenue: number;
-  orders: number;
-  averageOrderValue: number;
-  growth: number;
-}
-
-export const reportAPI = {
-  getRevenue: (startDate: string, endDate: string, storeId?: number, period?: string) =>
-    apiClient.get<BackendBaseResponse<RevenueReport[]>>('/api/v1/reports/revenue', {
-      params: { startDate, endDate, storeId, period },
-    }),
-  getProductSales: (startDate: string, endDate: string, storeId?: number) =>
-    apiClient.get<BackendBaseResponse<ProductSalesReport[]>>('/api/v1/reports/product-sales', {
-      params: { startDate, endDate, storeId },
-    }),
-  getStoreComparison: (startDate: string, endDate: string) =>
-    apiClient.get<BackendBaseResponse<StoreComparison[]>>('/api/v1/reports/store-comparison', {
-      params: { startDate, endDate },
-    }),
+  // Xuất Excel (mảng byte)
+  exportExcel: (params: {
+    storeId?: number;
+    channel?: string;
+    status?: string;
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) =>
+    api.get<ArrayBuffer>(
+      `${V1_PREFIX}/hoa-don/export`,
+      {
+        params,
+        responseType: 'arraybuffer',
+      },
+    ),
 };
-export interface SaveHoaDonRequest {
-  tamTinh: number;
-  chietKhau: number;
-  tongPhaiThanhToan: number;
-  trangThai: string; 
-  phuongThucThanhToan: string; 
-  chiTiet: {
-    sanPhamId: number;
-    soLuong: number;
-    giaBan: number;
-    thanhTien: number;
-  }[];
-}
 
-export interface BackendHoaDon {
-  hoaDonId: number;
-  ngayLap: string;
-  tamTinh: number;
-  chietKhau: number;
-  tongPhaiThanhToan: number;
-  trangThai: string;
-}
+// ================== ORDER HISTORY / SỔ QUỸ API ==================
 
-// 2. Khai báo orderAPI để React có thể gọi
+export const orderHistoryAPI = {
+  getAll: (params?: {
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) =>
+    api.get<BackendOrderHistoryRow[]>(
+      `${V1_PREFIX}/order-history`,
+      { params },
+    ),
 
-export default apiClient;
+  exportExcel: (params?: {
+    from?: string;
+    to?: string;
+    keyword?: string;
+  }) =>
+    api.get<ArrayBuffer>(
+      `${V1_PREFIX}/order-history/export`,
+      {
+        params,
+        responseType: 'arraybuffer',
+      },
+    ),
+};
+
+// ================== DASHBOARD API ==================
+
+export const dashboardAPI = {
+  getStats: (params?: {
+    storeId?: number;
+    startDate?: string; // yyyy-MM-dd
+    endDate?: string; // yyyy-MM-dd
+  }) =>
+    api.get<ApiResponse<any>>(
+      `${V1_PREFIX}/dashboard/stats`,
+      { params },
+    ),
+};
+
+// ================== AI / AGENT API ==================
+
+export const aiAPI = {
+  getRecommendations: (params?: {
+    storeId?: number;
+    type?: string;
+    priority?: string;
+    isResolved?: boolean;
+  }) =>
+    api.get<ApiResponse<BackendAIRecommendation[]>>(
+      `${V1_PREFIX}/ai/recommendations`,
+      { params },
+    ),
+
+  getPredictions: (params?: { storeId?: number }) =>
+    api.get<ApiResponse<BackendDemandPrediction[]>>(
+      `${V1_PREFIX}/ai/predictions`,
+      { params },
+    ),
+
+  markAsRead: (id: number) =>
+    api.put<ApiResponse<BackendAIRecommendation>>(
+      `${V1_PREFIX}/ai/recommendations/${id}/read`,
+    ),
+
+  markAsResolved: (id: number) =>
+    api.put<ApiResponse<BackendAIRecommendation>>(
+      `${V1_PREFIX}/ai/recommendations/${id}/resolve`,
+    ),
+};
+
+// ================== ACTIVITY LOG API ==================
+
+export const activityLogAPI = {
+  getAll: (
+    userId?: number,
+    action?: string,
+    entityType?: string,
+    search?: string,
+    page: number = 0,
+    size: number = 20,
+  ) =>
+    api.get<ApiResponse<Page<BackendActivityLog>>>(
+      `${V1_PREFIX}/activity-logs`,
+      {
+        params: {
+          userId,
+          action,
+          entityType,
+          search,
+          page,
+          size,
+        },
+      },
+    ),
+};
+
+// ================== SETTINGS (CURRENT USER) API ==================
+
+export const settingsAPI = {
+  getCurrentUser: () =>
+    api.get<ApiResponse<BackendUser>>(
+      `${V1_PREFIX}/users/me`,
+    ),
+
+  updateProfile: (payload: {
+    fullName: string;
+    phone?: string;
+  }) =>
+    api.put<ApiResponse<BackendUser>>(
+      `${V1_PREFIX}/users/me`,
+      payload,
+    ),
+
+  changePassword: (payload: {
+    currentPassword: string;
+    newPassword: string;
+  }) =>
+    api.put<ApiResponse<void>>(
+      `${V1_PREFIX}/users/me/password`,
+      payload,
+    ),
+
+  getNotificationSettings: () =>
+    api.get<ApiResponse<NotificationSettings>>(
+      `${V1_PREFIX}/users/me/settings`,
+    ),
+
+  updateNotificationSettings: (payload: NotificationSettings) =>
+    api.put<ApiResponse<void>>(
+      `${V1_PREFIX}/users/me/settings`,
+      payload,
+    ),
+};
+
+// ================== DEFAULT EXPORT (OPTIONAL) ==================
+
+export default api;
 

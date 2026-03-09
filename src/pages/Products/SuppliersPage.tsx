@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip
+  Checkbox, Chip, Dialog, DialogTitle, DialogContent, DialogActions, Grid
 } from '@mui/material';
 import {
   Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
@@ -10,17 +10,116 @@ import {
   Visibility as ViewIcon, Edit as EditIcon,
   AccountBalanceWallet as DebtIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu Nhà cung cấp
-const mockSuppliers = [
-  { no: 1, maNCC: 'NCC001', tenNCC: 'Công ty Cổ phần Sữa Việt Nam (Vinamilk)', nguoiLienHe: 'Nguyễn Văn A', dienThoai: '0901234567', email: 'contact@vinamilk.vn', diaChi: 'Quận 7, TP.HCM', congNo: 15000000, trangThai: 'Đang giao dịch' },
-  { no: 2, maNCC: 'NCC002', tenNCC: 'Đại lý Bánh Kẹo Hưng Yên', nguoiLienHe: 'Trần Thị B', dienThoai: '0988777666', email: 'hungyenbakery@gmail.com', diaChi: 'Văn Lâm, Hưng Yên', congNo: 0, trangThai: 'Đang giao dịch' },
-  { no: 3, maNCC: 'NCC003', tenNCC: 'Xưởng Bao Bì Nam Phát', nguoiLienHe: 'Lê Hoàng C', dienThoai: '0911333444', email: 'namphat@gmail.com', diaChi: 'Cầu Giấy, Hà Nội', congNo: -2000000, trangThai: 'Ngừng giao dịch' },
-];
+import { supplierAPI, type BackendSupplier } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
 
 export const SuppliersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+  const [suppliers, setSuppliers] = useState<BackendSupplier[]>([]);
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editing, setEditing] = useState<BackendSupplier | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    contactName: '',
+    phone: '',
+    email: '',
+    address: '',
+    taxCode: '',
+    status: 'Đang giao dịch',
+  });
+  const { showToast } = useToastStore();
+
+  useEffect(() => {
+    void loadSuppliers();
+  }, []);
+
+  const loadSuppliers = async () => {
+    try {
+      const res = await supplierAPI.getAll();
+      setSuppliers(res.data || []);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách nhà cung cấp', 'error');
+    }
+  };
+
+  const formatCurrency = (value: number) =>
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+
+  const filtered = suppliers.filter((s) => {
+    const kw = searchQuery.toLowerCase();
+    return (
+      s.tenNhaCungCap.toLowerCase().includes(kw) ||
+      (s.dienThoai || '').toLowerCase().includes(kw) ||
+      (s.email || '').toLowerCase().includes(kw)
+    );
+  });
+
+  const handleOpenDialog = (item?: BackendSupplier) => {
+    if (item) {
+      setEditing(item);
+      setFormData({
+        name: item.tenNhaCungCap,
+        contactName: item.nguoiLienHe || '',
+        phone: item.dienThoai || '',
+        email: item.email || '',
+        address: item.diaChi || '',
+        taxCode: item.maSoThue || '',
+        status: item.trangThai || 'Đang giao dịch',
+      });
+    } else {
+      setEditing(null);
+      setFormData({
+        name: '',
+        contactName: '',
+        phone: '',
+        email: '',
+        address: '',
+        taxCode: '',
+        status: 'Đang giao dịch',
+      });
+    }
+    setOpenDialog(true);
+  };
+
+  const handleSave = async () => {
+    if (!formData.name.trim()) {
+      showToast('Tên nhà cung cấp là bắt buộc', 'warning');
+      return;
+    }
+    try {
+      const payload = {
+        tenNhaCungCap: formData.name.trim(),
+        dienThoai: formData.phone || undefined,
+        email: formData.email || undefined,
+        diaChi: formData.address || undefined,
+        nguoiLienHe: formData.contactName || undefined,
+        maSoThue: formData.taxCode || undefined,
+        trangThai: formData.status || undefined,
+      };
+      if (editing) {
+        await supplierAPI.update(editing.nhaCungCapId, payload);
+        showToast('Cập nhật nhà cung cấp thành công', 'success');
+      } else {
+        await supplierAPI.create(payload);
+        showToast('Thêm nhà cung cấp thành công', 'success');
+      }
+      setOpenDialog(false);
+      await loadSuppliers();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu nhà cung cấp', 'error');
+    }
+  };
+
+  const handleDelete = async (item: BackendSupplier) => {
+    if (!window.confirm(`Xóa nhà cung cấp "${item.tenNhaCungCap}"?`)) return;
+    try {
+      await supplierAPI.delete(item.nhaCungCapId);
+      showToast('Xóa nhà cung cấp thành công', 'success');
+      await loadSuppliers();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi xóa nhà cung cấp', 'error');
+    }
+  };
 
   return (
     <Box className="fade-in">
@@ -35,13 +134,21 @@ export const SuppliersPage: React.FC = () => {
           
           {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
+            <TextField
               size="small" placeholder="Tìm: Mã NCC/Tên NCC/Điện thoại..." 
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
               sx={{ width: 280, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm NCC</Button>
+            <Button
+              size="small"
+              variant="contained"
+              startIcon={<AddIcon />}
+              onClick={() => handleOpenDialog()}
+              sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}
+            >
+              Thêm NCC
+            </Button>
             <Button size="small" variant="contained" startIcon={<DebtIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thanh Toán Công Nợ</Button>
             <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Print</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
@@ -70,36 +177,63 @@ export const SuppliersPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {mockSuppliers.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                        <Box sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><ViewIcon sx={{ fontSize: 14 }} /></Box>
-                        <Box sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
-                      </Box>
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{row.maNCC}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.tenNCC}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.nguoiLienHe}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.dienThoai}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.email}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.diaChi}</TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: row.congNo > 0 ? '#dc2626' : row.congNo < 0 ? '#16a34a' : '#475569', p: 1.5 }}>
-                      {formatCurrency(row.congNo)}
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      {row.trangThai === 'Đang giao dịch' ? 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                      }
-                    </TableCell>
-                  </TableRow>
-                ))}
+         {filtered.map((row, index) => (
+  <TableRow key={row.nhaCungCapId} hover sx={{ '&:last-child td': { border: 0 } }}>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
+      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
+        <Box sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}>
+          <ViewIcon sx={{ fontSize: 14 }} />
+        </Box>
+        <Box
+          sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}
+          onClick={() => handleOpenDialog(row)}
+        >
+          <EditIcon sx={{ fontSize: 14 }} />
+        </Box>
+        <Box
+          sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}
+          onClick={() => handleDelete(row)}
+        >
+          <DeleteIcon sx={{ fontSize: 14 }} />
+        </Box>
+      </Box>
+    </TableCell>
+
+    {/* THESE THREE CELLS WERE MISSING */}
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>
+      {row.nhaCungCapId}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>
+      {row.tenNhaCungCap}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+      {row.nguoiLienHe || '-'}
+    </TableCell>
+
+    {/* The rest of your fixed cells */}
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+      {row.dienThoai || '-'}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+      {row.email || '-'}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+      {row.diaChi || '-'}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: row.congNo > 0 ? '#dc2626' : row.congNo < 0 ? '#16a34a' : '#475569', p: 1.5 }}>
+      {formatCurrency(row.congNo)}
+    </TableCell>
+    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
+      {row.trangThai === 'Đang giao dịch' ? 
+        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
+        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 600, border: 'none', borderRadius: 1 }} />
+      }
+    </TableCell>
+  </TableRow>
+))}
+                
               </TableBody>
             </Table>
           </TableContainer>
