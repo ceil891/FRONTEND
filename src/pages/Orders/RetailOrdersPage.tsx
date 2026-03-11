@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
@@ -9,16 +9,54 @@ import {
   FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, AssignmentReturn as ReturnIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu Hóa đơn bán lẻ
-const mockOrders = [
-  { no: 1, maHD: 'HD260301', ngayBan: '06/03/2026 08:30', khachHang: 'Khách lẻ', tongTien: 1250000, giamGia: 50000, thanhToan: 1200000, nhanVien: 'Admin', chiNhanh: 'Hà Nội', trangThai: 'Hoàn thành' },
-  { no: 2, maHD: 'HD260302', ngayBan: '06/03/2026 09:15', khachHang: 'Đào Quang Thành', tongTien: 450000, giamGia: 0, thanhToan: 450000, nhanVien: 'Sale 01', chiNhanh: 'Hồ Chí Minh', trangThai: 'Hoàn thành' },
-];
+import { orderAPI, type BackendHoaDonDTO } from '../../api/client';
 
 export const RetailOrdersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [rows, setRows] = useState<BackendHoaDonDTO[]>([]);
+  const [loading, setLoading] = useState(false);
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+
+  const filtered = useMemo(() => {
+    const kw = searchQuery.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((r) =>
+      [r.maHoaDon, r.tenKhachHang, r.dienThoaiKhachHang, r.tenNhanVien, r.tenCuaHang]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(kw))
+    );
+  }, [rows, searchQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    orderAPI
+      .query({ channel: 'RETAIL' })
+      .then((res) => {
+        if (!mounted) return;
+        setRows(res.data ?? []);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const downloadExcel = async () => {
+    const res = await orderAPI.exportExcel({ channel: 'RETAIL', keyword: searchQuery.trim() || undefined });
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'don_ban_le.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <Box className="fade-in">
@@ -41,9 +79,9 @@ export const RetailOrdersPage: React.FC = () => {
             
             <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Tạo Đơn (POS)</Button>
             <Button size="small" variant="contained" startIcon={<ReturnIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Khách Trả Hàng</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Hóa Đơn</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-            <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Hủy HĐ</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Hóa Đơn</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} onClick={downloadExcel} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
+            <Button size="small" variant="contained" startIcon={<DeleteIcon />} disabled sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Hủy HĐ</Button>
           </Box>
 
           <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
@@ -68,9 +106,9 @@ export const RetailOrdersPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {mockOrders.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {filtered.map((row, idx) => (
+                  <TableRow key={row.hoaDonId} hover sx={{ '&:last-child td': { border: 0 } }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{idx + 1}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
@@ -78,16 +116,16 @@ export const RetailOrdersPage: React.FC = () => {
                       </Box>
                     </TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.maHD}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.ngayBan}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.khachHang}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', p: 1.5 }}>{formatCurrency(row.tongTien)}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#dc2626', p: 1.5 }}>{formatCurrency(row.giamGia)}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#16a34a', p: 1.5 }}>{formatCurrency(row.thanhToan)}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.nhanVien}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.chiNhanh}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.maHoaDon ?? `HD${row.hoaDonId}`}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{new Date(row.ngayLap).toLocaleString('vi-VN')}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.tenKhachHang ?? 'Khách lẻ'}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', p: 1.5 }}>{formatCurrency(Number(row.tamTinh ?? 0))}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#dc2626', p: 1.5 }}>{formatCurrency(Number(row.chietKhau ?? 0))}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#16a34a', p: 1.5 }}>{formatCurrency(Number(row.tongPhaiThanhToan ?? 0))}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.tenNhanVien ?? '-'}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.tenCuaHang ?? '-'}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} />
+                      <Chip label={row.trangThai ?? '-'} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -97,7 +135,9 @@ export const RetailOrdersPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {mockOrders.length} of {mockOrders.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+               {loading ? 'Đang tải...' : `1 - ${filtered.length} of ${filtered.length} items`}
+             </Typography>
           </Box>
         </CardContent>
       </Card>

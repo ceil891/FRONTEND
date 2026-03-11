@@ -48,6 +48,7 @@ import { ProductPricingPage } from './pages/Products/ProductPricingPage';
 import { SuppliersPage } from './pages/Products/SuppliersPage';
 import { RolePermissionPage } from './pages/Systems/RolePermissionPage';
 import { ImportInventoryPage } from './pages/Inventory/ImportInventoryPage';
+import { UnitsPage } from './pages/Products/UnitsPage';
 import { AreasPage } from './pages/Stores/AreasPage';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
@@ -103,6 +104,7 @@ function App() {
                 <Route path="/stores/area" element={<AreasPage />} />
 <Route path="/inventory/transfer" element={<TransferInventoryPage />} />
 <Route path="/system/roles" element={<RolePermissionPage />} />
+<Route path="/units" element={<UnitsPage />} />
         <Route path="/reports/profit-loss" element={<ProfitLossReport />} />
         <Route path="/reports/store-revenue" element={<StoreRevenueReport />} />
         <Route path="/reports/top-products" element={<TopProductsReport />} />

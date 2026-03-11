@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
@@ -8,16 +8,54 @@ import {
   Delete as DeleteIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, Restore as RestoreIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu Đơn bị hủy
-const mockCancelledOrders = [
-  { no: 1, maHD: 'HD260305', ngayHuy: '06/03/2026 14:20', khachHang: 'Trần Văn Kiên', dienThoai: '0911222333', tongTien: 550000, lyDo: 'Khách đổi ý không mua nữa', nguoiHuy: 'Sale 01', trangThai: 'Đã hủy' },
-  { no: 2, maHD: 'WEB012', ngayHuy: '05/03/2026 09:10', khachHang: 'Lê Thảo My', dienThoai: '0933444555', tongTien: 1250000, lyDo: 'Hết hàng trong kho', nguoiHuy: 'Admin', trangThai: 'Đã hủy' },
-];
+import { orderAPI, type BackendHoaDonDTO } from '../../api/client';
 
 export const CancelledOrdersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [rows, setRows] = useState<BackendHoaDonDTO[]>([]);
+  const [loading, setLoading] = useState(false);
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+
+  const filtered = useMemo(() => {
+    const kw = searchQuery.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((r) =>
+      [r.maHoaDon, r.tenKhachHang, r.dienThoaiKhachHang, r.lyDoHuy, r.nguoiHuy]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(kw))
+    );
+  }, [rows, searchQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    orderAPI
+      .query({ status: 'CANCELLED' })
+      .then((res) => {
+        if (!mounted) return;
+        setRows(res.data ?? []);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const downloadExcel = async () => {
+    const res = await orderAPI.exportExcel({ status: 'CANCELLED', keyword: searchQuery.trim() || undefined });
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'don_bi_huy.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   return (
     <Box className="fade-in">
@@ -38,8 +76,8 @@ export const CancelledOrdersPage: React.FC = () => {
               sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            <Button size="small" variant="contained" startIcon={<RestoreIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Khôi phục đơn</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
+            <Button size="small" variant="contained" startIcon={<RestoreIcon />} disabled sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Khôi phục đơn</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} onClick={downloadExcel} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
             <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xóa vĩnh viễn</Button>
           </Box>
 
@@ -65,9 +103,9 @@ export const CancelledOrdersPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {mockCancelledOrders.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 }, bgcolor: '#fef2f2' }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {filtered.map((row, idx) => (
+                  <TableRow key={row.hoaDonId} hover sx={{ '&:last-child td': { border: 0 }, bgcolor: '#fef2f2' }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{idx + 1}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
@@ -75,19 +113,23 @@ export const CancelledOrdersPage: React.FC = () => {
                       </Box>
                     </TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}><strike>{row.maHD}</strike></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.ngayHuy}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.khachHang}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.dienThoai}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#dc2626', p: 1.5 }}>{formatCurrency(row.tongTien)}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>
+                      <span style={{ textDecoration: 'line-through' }}>{row.maHoaDon ?? `HD${row.hoaDonId}`}</span>
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+                      {row.ngayHuy ? new Date(row.ngayHuy).toLocaleString('vi-VN') : '-'}
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.tenKhachHang ?? '-'}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.dienThoaiKhachHang ?? '-'}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#dc2626', p: 1.5 }}>{formatCurrency(Number(row.tongPhaiThanhToan ?? 0))}</TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Typography variant="body2" sx={{ color: '#b91c1c', fontStyle: 'italic' }}>{row.lyDo}</Typography>
+                      <Typography variant="body2" sx={{ color: '#b91c1c', fontStyle: 'italic' }}>{row.lyDoHuy ?? '-'}</Typography>
                     </TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', fontWeight: 600, p: 1.5 }}>{row.nguoiHuy}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', fontWeight: 600, p: 1.5 }}>{row.nguoiHuy ?? '-'}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 600, border: 'none', borderRadius: 1 }} />
+                      <Chip label={row.trangThai ?? 'CANCELLED'} size="small" sx={{ bgcolor: '#fee2e2', color: '#b91c1c', fontWeight: 600, border: 'none', borderRadius: 1 }} />
                     </TableCell>
                   </TableRow>
                 ))}
@@ -97,7 +139,9 @@ export const CancelledOrdersPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {mockCancelledOrders.length} of {mockCancelledOrders.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+               {loading ? 'Đang tải...' : `1 - ${filtered.length} of ${filtered.length} items`}
+             </Typography>
           </Box>
         </CardContent>
       </Card>

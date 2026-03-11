@@ -6,11 +6,12 @@ import {
 } from '@mui/material';
 import { Email as EmailIcon, Lock as LockIcon, Visibility, VisibilityOff, Store as StoreIcon } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
-import { LoginRequest, LoginResponse, UserRole, User } from '../../types';
+import { UserRole, User } from '../../types';
 import { authAPI } from '../../api/client';
 
 export const LoginPage: React.FC = () => {
   const [formData, setFormData] = useState<LoginRequest>({ email: '', password: '' });
+  const [formData, setFormData] = useState({ email: '', password: '' });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -27,9 +28,11 @@ export const LoginPage: React.FC = () => {
       // 1. Gọi backend thật để lấy JWT token và thông tin User
       const backendResponse = await authAPI.login(formData.email, formData.password);
 
-      if (!backendResponse.success || !backendResponse.data?.accessToken) {
-        throw new Error(backendResponse.message || 'Đăng nhập thất bại.');
-      }
+      // 2. Tự định nghĩa User dựa trên Email (Logic Demo)
+      const role = 
+          formData.email.includes('admin') ? UserRole.ADMIN :
+          formData.email.includes('manager') ? UserRole.MANAGER : 
+          UserRole.STAFF;
 
       // 2. Lấy dữ liệu THẬT do Spring Boot trả về
       const { accessToken, role, fullName } = backendResponse.data;
@@ -105,7 +108,7 @@ export const LoginPage: React.FC = () => {
                         {showPassword ? <VisibilityOff /> : <Visibility />}
                       </IconButton>
                     </InputAdornment>
-                  ),
+                  )
                 }}
               />
               <Button type="submit" fullWidth variant="contained" size="large" sx={{ mt: 3, mb: 2, py: 1.5 }} disabled={loading}>

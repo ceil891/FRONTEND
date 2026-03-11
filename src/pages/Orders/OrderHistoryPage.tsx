@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
@@ -8,17 +8,54 @@ import {
   Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, PictureAsPdf as PdfIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu Lịch sử giao dịch
-const mockHistory = [
-  { no: 1, maGD: 'GD-00192', thoiGian: '06/03/2026 15:45', loaiGD: 'Bán hàng', doiTuong: 'Khách lẻ', giaTri: 250000, phuongThuc: 'Tiền mặt', nhanVien: 'Admin' },
-  { no: 2, maGD: 'GD-00191', thoiGian: '06/03/2026 14:10', loaiGD: 'Trả hàng', doiTuong: 'Nguyễn Thị Hương', giaTri: -120000, phuongThuc: 'Chuyển khoản', nhanVien: 'Sale 01' },
-  { no: 3, maGD: 'GD-00190', thoiGian: '06/03/2026 10:05', loaiGD: 'Bán hàng', doiTuong: 'Đào Quang Thành', giaTri: 1550000, phuongThuc: 'Quẹt thẻ', nhanVien: 'Admin' },
-];
+import { orderHistoryAPI, type BackendOrderHistoryRow } from '../../api/client';
 
 export const OrderHistoryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
+  const [rows, setRows] = useState<BackendOrderHistoryRow[]>([]);
+  const [loading, setLoading] = useState(false);
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+
+  const filtered = useMemo(() => {
+    const kw = searchQuery.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((r) =>
+      [r.maGD, r.doiTuong, r.loaiGD, r.phuongThuc, r.nhanVien]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(kw))
+    );
+  }, [rows, searchQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    orderHistoryAPI
+      .getAll()
+      .then((res) => {
+        if (!mounted) return;
+        setRows(res.data ?? []);
+      })
+      .finally(() => {
+        if (!mounted) return;
+        setLoading(false);
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  const downloadExcel = async () => {
+    const res = await orderHistoryAPI.exportExcel({ keyword: searchQuery.trim() || undefined });
+    const blob = new Blob([res.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'lich_su_giao_dich.xlsx';
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
 
   const getTransactionTypeChip = (type: string) => {
     if (type === 'Bán hàng') return <Chip label={type} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, borderRadius: 1 }} />;
@@ -45,8 +82,8 @@ export const OrderHistoryPage: React.FC = () => {
               sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Lịch Sử</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Lịch Sử</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} onClick={downloadExcel} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
             <Button size="small" variant="contained" startIcon={<PdfIcon />} sx={{ bgcolor: '#00c0ef', '&:hover': { bgcolor: '#00acd6' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất PDF</Button>
           </Box>
 
@@ -72,9 +109,9 @@ export const OrderHistoryPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {mockHistory.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {filtered.map((row, idx) => (
+                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{idx + 1}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
@@ -83,16 +120,16 @@ export const OrderHistoryPage: React.FC = () => {
                     </TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.maGD}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.thoiGian}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{new Date(row.thoiGian).toLocaleString('vi-VN')}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>{getTransactionTypeChip(row.loaiGD)}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.doiTuong}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.doiTuong ?? '-'}</TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: row.giaTri < 0 ? '#dc2626' : '#16a34a', p: 1.5 }}>
                       {row.giaTri > 0 ? '+' : ''}{formatCurrency(row.giaTri)}
                     </TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.phuongThuc}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', fontWeight: 600, p: 1.5 }}>{row.nhanVien}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.phuongThuc ?? '-'}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', fontWeight: 600, p: 1.5 }}>{row.nhanVien ?? '-'}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
@@ -101,7 +138,9 @@ export const OrderHistoryPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {mockHistory.length} of {mockHistory.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
+               {loading ? 'Đang tải...' : `1 - ${filtered.length} of ${filtered.length} items`}
+             </Typography>
           </Box>
         </CardContent>
       </Card>

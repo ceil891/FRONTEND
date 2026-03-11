@@ -147,13 +147,14 @@ export const POSPage: React.FC = () => {
       const orderPayload = {
         cuaHangId: selectedStore.id, 
         nhanVienId: user.id, 
-        khachHangId: null, 
-        ghiChu: paymentMethod === PaymentMethod.QR_CODE ? "Thanh toán chuyển khoản" : "Bán tại quầy POS",
+        kenhBan: 'RETAIL',
+        status: 'COMPLETED',
+        notes: paymentMethod === PaymentMethod.QR_CODE ? "Thanh toán chuyển khoản" : "Bán tại quầy POS",
         tamTinh: subtotal,
         chietKhau: discount,
         shippingFee: 0,
         tongPhaiThanhToan: total,
-        trangThai: 'COMPLETED', 
+        paymentMethod: paymentMethod === PaymentMethod.QR_CODE ? 'QR_CODE' : paymentMethod,
         items: cart.map(item => ({
           bienTheId: Number(item.productId),
           quantity: item.quantity,

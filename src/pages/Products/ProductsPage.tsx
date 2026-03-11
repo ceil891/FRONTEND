@@ -578,6 +578,106 @@ export const ProductsPage: React.FC = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* ===== Dialog quản lý biến thể ===== */}
+      <Dialog open={openVariantDialog} onClose={() => setOpenVariantDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Biến thể sản phẩm: {variantProduct?.name}</DialogTitle>
+        <DialogContent dividers>
+          <Box sx={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr 2fr 1fr', gap: 1, mb: 2 }}>
+            <TextField
+              size="small"
+              label="Tên biến thể"
+              value={variantForm.tenBienThe}
+              onChange={(e) => setVariantForm((p) => ({ ...p, tenBienThe: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="SKU biến thể *"
+              value={variantForm.maSku}
+              onChange={(e) => setVariantForm((p) => ({ ...p, maSku: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Giá bán"
+              value={variantForm.giaBan}
+              onChange={(e) => setVariantForm((p) => ({ ...p, giaBan: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Giá nhập"
+              value={variantForm.giaNhap}
+              onChange={(e) => setVariantForm((p) => ({ ...p, giaNhap: e.target.value }))}
+            />
+            <TextField
+              size="small"
+              label="Mã vạch"
+              value={variantForm.maVach}
+              onChange={(e) => setVariantForm((p) => ({ ...p, maVach: e.target.value }))}
+            />
+            <Button variant="contained" onClick={createVariant} sx={{ textTransform: 'none' }}>
+              Tạo
+            </Button>
+          </Box>
+
+          <TableContainer>
+            <Table size="small">
+              <TableHead>
+                <TableRow>
+                  <TableCell>ID</TableCell>
+                  <TableCell>SKU</TableCell>
+                  <TableCell>Tên biến thể</TableCell>
+                  <TableCell align="right">Giá bán</TableCell>
+                  <TableCell align="right">Giá nhập</TableCell>
+                  <TableCell>Mã vạch</TableCell>
+                  <TableCell align="center">Trạng thái</TableCell>
+                  <TableCell align="center">Xóa</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {variantLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3 }}>
+                      <CircularProgress size={24} />
+                    </TableCell>
+                  </TableRow>
+                ) : variants.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={8} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                      Chưa có biến thể
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  variants.map((v) => (
+                    <TableRow key={v.bienTheId}>
+                      <TableCell>{v.bienTheId}</TableCell>
+                      <TableCell>{v.maSku}</TableCell>
+                      <TableCell>{v.tenBienThe}</TableCell>
+                      <TableCell align="right">{Number(v.giaBan ?? 0).toLocaleString('vi-VN')}</TableCell>
+                      <TableCell align="right">{Number(v.giaNhap ?? 0).toLocaleString('vi-VN')}</TableCell>
+                      <TableCell>{v.maVach}</TableCell>
+                      <TableCell align="center">
+                        <Chip
+                          label={v.hoatDong ? 'Đang bán' : 'Ngưng bán'}
+                          size="small"
+                          color={v.hoatDong ? 'success' : 'default'}
+                        />
+                      </TableCell>
+                      <TableCell align="center">
+                        <Button size="small" color="error" onClick={() => deleteVariant(v.bienTheId)}>
+                          Xóa
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenVariantDialog(false)} sx={{ textTransform: 'none' }}>Đóng</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
