@@ -16,8 +16,11 @@ import {
   Storefront as StorefrontIcon,
   AccountBalance as AccountBalanceIcon,
   Map as MapIcon,
-  Security as SecurityIcon
-} from '@mui/icons-material';  
+  Security as SecurityIcon,
+  // ===== THÊM 2 ICON NÀY VÀO ĐÂY =====
+  ColorLens as ColorIcon, 
+  FormatSize as SizeIcon 
+} from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { UserRole } from '../../types';
 import { Chatbot } from '../Chatbot/Chatbot';
@@ -79,7 +82,18 @@ export const DashboardLayout: React.FC = () => {
         { text: 'Giá theo cửa hàng', icon: <OfferIcon />, path: '/product-pricing', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         { text: ' Quản lý Nhà cung cấp', icon: <PeopleIcon />, path: '/suppliers', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
         {text: 'Quản lý đơn vị', icon: <PeopleIcon />, path: '/units', roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] },
-
+{ 
+  text: 'Quản lý màu sắc', 
+  icon: <ColorIcon/>, 
+  path: '/colors', 
+  roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] 
+},
+{ 
+  text: 'Quản lý kích thước (Size)', 
+  icon: <SizeIcon />, 
+  path: '/sizes', 
+  roles: [UserRole.MANAGER, UserRole.ADMIN, UserRole.SUPER_ADMIN] 
+},
       ]
     },
     { 
