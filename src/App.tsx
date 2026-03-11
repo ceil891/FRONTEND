@@ -21,11 +21,11 @@ import { ActivityLogsPage } from './pages/ActivityLogs/ActivityLogsPage';
 import { NotificationsPage } from './pages/Notifications/NotificationsPage';
 import { Toast } from './components/common/Toast';
 import { useToastStore } from './store/toastStore';
-import  {EmployeesPage} from './pages/Employees/EmployeesPage';
+import { EmployeesPage } from './pages/Employees/EmployeesPage';
 import { ReceiptPage } from './pages/finance/ReceiptPage';
 import { PaymentPage } from './pages/finance/PaymentPage';
 import { BankBookPage } from './pages/finance/BankBookPage';
-import { CashBookPage } from './pages/finance/CashBookPage'; // Quên nhắc bạn import cái này ở tin nhắn trước
+import { CashBookPage } from './pages/finance/CashBookPage'; 
 import { SupplierDebtPage } from './pages/finance/SupplierDebtPage';
 import { EmployeePerformancePage } from './pages/Employees/EmployeePerformancePage';
 import { StoreRevenueReport } from './pages/Reports/StoreRevenueReport';
@@ -50,6 +50,9 @@ import { RolePermissionPage } from './pages/Systems/RolePermissionPage';
 import { ImportInventoryPage } from './pages/Inventory/ImportInventoryPage';
 import { UnitsPage } from './pages/Products/UnitsPage';
 import { AreasPage } from './pages/Stores/AreasPage';
+import { ColorPage } from './pages/Products/ColorPage';
+import { SizePage } from './pages/Products/SizePage';
+
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuthStore();
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
@@ -64,6 +67,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />
+          
           <Route
             path="/"
             element={
@@ -72,50 +76,72 @@ function App() {
               </PrivateRoute>
             }
           >
+            {/* Redirect mặc định */}
             <Route index element={<Navigate to="/dashboard" replace />} />
+            
+            {/* Dashboard & Tổng quan */}
             <Route path="dashboard" element={<DashboardPage />} />
+            <Route path="ai-dashboard" element={<AIDashboardPage />} />
             <Route path="pos" element={<POSPage />} />
+
+            {/* Giao dịch (Orders) */}
             <Route path="orders" element={<OrdersPage />} />
-            <Route path="inventory" element={<InventoryPage />} />
+            <Route path="orders/retail" element={<RetailOrdersPage />} />
+            <Route path="orders/online" element={<OnlineOrdersPage />} />
+            <Route path="orders/history" element={<OrderHistoryPage />} />
+            <Route path="orders/cancelled" element={<CancelledOrdersPage />} />
+
+            {/* Hàng hóa & Sản phẩm */}
             <Route path="products" element={<ProductsPage />} />
             <Route path="categories" element={<CategoriesPage />} />
+            <Route path="colors" element={<ColorPage />} />
+            <Route path="sizes" element={<SizePage />} />
+            <Route path="units" element={<UnitsPage />} />
+            <Route path="product-pricing" element={<ProductPricingPage />} />
             <Route path="promotions" element={<PromotionsPage />} />
-            <Route path="work-shifts" element={<WorkShiftsPage />} />
-            <Route path="ai-dashboard" element={<AIDashboardPage />} />
-          <Route path="/finance/receipt" element={<ReceiptPage />} />
-        <Route path="/finance/payment" element={<PaymentPage />} />
-        <Route path="/finance/supplier-debt" element={<SupplierDebtPage />} />
-        <Route path="/finance/cash-book" element={<CashBookPage />} />
-        <Route path="/finance/bank-book" element={<BankBookPage />} />
-        <Route path="/employees/performance" element={<EmployeePerformancePage />} />
-<Route path="/reports/store-performance" element={<StorePerformanceReport />} />
-        <Route path="/reports/system-inventory" element={<SystemInventoryReport />} />
-        <Route path="/loyalty" element={<LoyaltyPage />} />
-       <Route path="/orders/cancelled" element={<CancelledOrdersPage />} />
-              <Route path="/inventory/import" element={<ImportInventoryPage/>} />
-        <Route path="/orders/history" element={<OrderHistoryPage />} />
-        <Route path="/orders/retail" element={<RetailOrdersPage />} />
-        <Route path="/orders/online" element={<OnlineOrdersPage />} />
-        <Route path="/customers" element={<CustomersPage />} />
-        <Route path="/inventory/export" element={<ExportInventoryPage />} />
-<Route path="/inventory/check" element={<InventoryCheckPage />} />
-<Route path="/inventory/return-supplier" element={<ReturnSupplierPage />} />
-        <Route path="/inventory/return-customer" element={<ReturnCustomerPage />} />
-                <Route path="/stores/area" element={<AreasPage />} />
-<Route path="/inventory/transfer" element={<TransferInventoryPage />} />
-<Route path="/system/roles" element={<RolePermissionPage />} />
-<Route path="/units" element={<UnitsPage />} />
-        <Route path="/reports/profit-loss" element={<ProfitLossReport />} />
-        <Route path="/reports/store-revenue" element={<StoreRevenueReport />} />
-        <Route path="/reports/top-products" element={<TopProductsReport />} />
-        <Route path="/product-pricing" element={<ProductPricingPage />} />
-        <Route path="/suppliers" element={<SuppliersPage />} />
+
+            {/* Kho hàng (Inventory) */}
+            <Route path="inventory" element={<InventoryPage />} />
+            <Route path="inventory/import" element={<ImportInventoryPage/>} />
+            <Route path="inventory/export" element={<ExportInventoryPage />} />
+            <Route path="inventory/check" element={<InventoryCheckPage />} />
+            <Route path="inventory/transfer" element={<TransferInventoryPage />} />
+            <Route path="inventory/return-supplier" element={<ReturnSupplierPage />} />
+            <Route path="inventory/return-customer" element={<ReturnCustomerPage />} />
+
+            {/* Tài chính & Đối tác */}
+            <Route path="finance/receipt" element={<ReceiptPage />} />
+            <Route path="finance/payment" element={<PaymentPage />} />
+            <Route path="finance/cash-book" element={<CashBookPage />} />
+            <Route path="finance/bank-book" element={<BankBookPage />} />
+            <Route path="finance/supplier-debt" element={<SupplierDebtPage />} />
+            <Route path="suppliers" element={<SuppliersPage />} />
+
+            {/* Khách hàng */}
+            <Route path="customers" element={<CustomersPage />} />
+            <Route path="loyalty" element={<LoyaltyPage />} />
+
+            {/* Cửa hàng & Nhân sự */}
             <Route path="stores" element={<StoresPage />} />
-            <Route path="users" element={<UsersPage />} />
+            <Route path="stores/area" element={<AreasPage />} />
             <Route path="employees" element={<EmployeesPage />} />
+            <Route path="employees/performance" element={<EmployeePerformancePage />} />
+            <Route path="work-shifts" element={<WorkShiftsPage />} />
+            <Route path="users" element={<UsersPage />} />
+
+            {/* Báo cáo (Reports) */}
+            <Route path="reports/store-revenue" element={<StoreRevenueReport />} />
+            <Route path="reports/store-performance" element={<StorePerformanceReport />} />
+            <Route path="reports/system-inventory" element={<SystemInventoryReport />} />
+            <Route path="reports/top-products" element={<TopProductsReport />} />
+            <Route path="reports/profit-loss" element={<ProfitLossReport />} />
+
+            {/* Hệ thống */}
+            <Route path="system/roles" element={<RolePermissionPage />} />
             <Route path="settings" element={<SettingsPage />} />
             <Route path="activity-logs" element={<ActivityLogsPage />} />
             <Route path="notifications" element={<NotificationsPage />} />
+
           </Route>
         </Routes>
       </BrowserRouter>
