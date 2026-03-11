@@ -226,7 +226,7 @@ export const AIDashboardPage: React.FC = () => {
             },
           }}
         >
-          Dự đoán nhu cầu
+          Dự Đoán Nhu Cầu
         </Button>
         <Button
           variant={selectedTab === 'alerts' ? 'contained' : 'outlined'}
@@ -242,7 +242,7 @@ export const AIDashboardPage: React.FC = () => {
             },
           }}
         >
-          Cảnh báo ({unreadCount})
+          Cảnh Báo ({unreadCount})
         </Button>
       </Box>
 
@@ -366,18 +366,18 @@ export const AIDashboardPage: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-              Dự đoán nhu cầu sản phẩm (7 Ngày Tới)
+              Dự Đoán Nhu Cầu Sản Phẩm (7 Ngày Tới)
             </Typography>
             <TableContainer>
               <Table>
                 <TableHead>
                   <TableRow>
                     <TableCell>Sản Phẩm</TableCell>
-                    <TableCell align="right">Tồn kho hiện tại</TableCell>
-                    <TableCell align="right">Nhu cầu dự đoán</TableCell>
-                    <TableCell align="right">Đề xuất nhập</TableCell>
-                    <TableCell align="right">Độ tin cậy</TableCell>
-                    <TableCell align="right">Thao tác</TableCell>
+                    <TableCell align="right">Tồn Kho Hiện Tại</TableCell>
+                    <TableCell align="right">Nhu Cầu Dự Đoán</TableCell>
+                    <TableCell align="right">Đề Xuất Nhập</TableCell>
+                    <TableCell align="right">Độ Tin Cậy</TableCell>
+                    <TableCell align="right">Thao Tác</TableCell>
                   </TableRow>
                 </TableHead>
                 <TableBody>
@@ -423,7 +423,7 @@ export const AIDashboardPage: React.FC = () => {
                       <TableCell align="right">
                         {pred.recommendedOrder > 0 && (
                           <Button size="small" variant="contained">
-                            Nhập <h1></h1>àng
+                            Nhập Hàng
                           </Button>
                         )}
                       </TableCell>
@@ -442,7 +442,7 @@ export const AIDashboardPage: React.FC = () => {
         <Card>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ fontWeight: 600 }}>
-              Cảnh báo hệ thống
+              Cảnh Báo Hệ Thống
             </Typography>
             {recommendations.filter(r => !r.isRead).length === 0 ? (
               <Box sx={{ textAlign: 'center', py: 4 }}>
@@ -457,10 +457,10 @@ export const AIDashboardPage: React.FC = () => {
                   <TableHead>
                     <TableRow>
                       <TableCell>Loại</TableCell>
-                      <TableCell>Tiêu đề</TableCell>
-                      <TableCell>Mức độ</TableCell>
-                      <TableCell>Thời gian</TableCell>
-                      <TableCell align="right">Thao tác</TableCell>
+                      <TableCell>Tiêu Đề</TableCell>
+                      <TableCell>Mức Độ</TableCell>
+                      <TableCell>Thời Gian</TableCell>
+                      <TableCell align="right">Thao Tác</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>

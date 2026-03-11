@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, TextField, MenuItem,
-  FormControl, InputLabel, Select, Button, Grid, Pagination
+  FormControl, InputLabel, Select, Button, Grid, Pagination,
+  Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress
 } from '@mui/material';
 import {
   AccountBalance as BankIcon,
@@ -14,31 +15,95 @@ import {
   FilterAlt as FilterIcon,
   SyncAlt as SyncIcon
 } from '@mui/icons-material';
-
-// Dữ liệu mẫu giao dịch Ngân hàng
-const mockBankTransactions = [
-  { no: 1, id: 'CK001', date: '2026-03-05 08:30:00', type: 'INCOME', category: 'Bán hàng', description: 'Nhận CK tiền hàng Vietcombank', amountIn: 25000000, amountOut: 0, balance: 125000000, creator: 'System' },
-  { no: 2, id: 'CK002', date: '2026-03-05 09:15:00', type: 'EXPENSE', category: 'Nhập hàng', description: 'CK trả NCC Nước Giải Khát', amountIn: 0, amountOut: 15000000, balance: 110000000, creator: 'Kế toán trưởng' },
-  { no: 3, id: 'CK003', date: '2026-03-05 14:20:00', type: 'INCOME', category: 'Bán hàng', description: 'Khách hàng A quét mã QR', amountIn: 1500000, amountOut: 0, balance: 111500000, creator: 'System' },
-];
+import { useToastStore } from '../../store/toastStore'; // Đảm bảo đường dẫn đúng
+import { cashbookAPI, BackendCashbookTransaction } from '../../api/client'; // Đảm bảo đường dẫn file api.ts đúng
+import dayjs from 'dayjs'; // Cài thêm npm install dayjs nếu chưa có để format ngày
 
 export const BankBookPage: React.FC = () => {
+  const [transactions, setTransactions] = useState<BackendCashbookTransaction[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
-
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
-  };
-
-  const filteredTransactions = mockBankTransactions.filter(t => {
-    const matchSearch = t.id.includes(searchQuery) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = typeFilter === 'ALL' || t.type === typeFilter;
-    return matchSearch && matchType;
+  
+  // States cho Dialog Tạo giao dịch
+  const [openDialog, setOpenDialog] = useState(false);
+  const [formData, setFormData] = useState({
+    type: 'INCOME',
+    category: '',
+    referenceName: '',
+    amount: '',
+    description: ''
   });
 
-  const totalIncome = mockBankTransactions.reduce((sum, t) => sum + t.amountIn, 0);
-  const totalExpense = mockBankTransactions.reduce((sum, t) => sum + t.amountOut, 0);
-  const currentBalance = 111500000; // Mock số dư hiện tại của tài khoản ngân hàng
+  const { showToast } = useToastStore();
+
+  // Gọi API lấy dữ liệu Sổ ngân hàng
+  const fetchBankTransactions = async () => {
+    setLoading(true);
+    try {
+      // Chỉ lấy giao dịch BANK_TRANSFER
+      const res = await cashbookAPI.getAll('BANK_TRANSFER', typeFilter, searchQuery);
+      if (res.success) {
+        setTransactions(res.data);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải dữ liệu', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Tự động gọi lại API khi Filter thay đổi (có thể dùng debounce cho searchQuery nếu cần)
+  useEffect(() => {
+    fetchBankTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter]);
+
+  const handleSearchSubmit = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      fetchBankTransactions();
+    }
+  };
+
+  // Xử lý lưu giao dịch mới
+  const handleSaveTransaction = async () => {
+    if (!formData.category || !formData.referenceName || !formData.amount) {
+      return showToast('Vui lòng điền đủ thông tin bắt buộc (*)', 'warning');
+    }
+
+    try {
+      setLoading(true);
+      await cashbookAPI.create({
+        type: formData.type as 'INCOME' | 'EXPENSE',
+        method: 'BANK_TRANSFER', // Hardcode vì đây là trang Ngân hàng
+        category: formData.category,
+        referenceName: formData.referenceName,
+        description: formData.description,
+        amount: Number(formData.amount),
+        storeId: 1, // Fix cứng tạm thời, sau này lấy từ Auth Context
+        creatorId: 1 // Fix cứng tạm thời, sau này lấy từ Auth Context
+      });
+      
+      showToast('Ghi nhận giao dịch ngân hàng thành công!', 'success');
+      setOpenDialog(false);
+      setFormData({ type: 'INCOME', category: '', referenceName: '', amount: '', description: '' });
+      fetchBankTransactions(); // Load lại bảng
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tạo giao dịch', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
+  };
+
+  // Tính toán Tóm tắt
+  const totalIncome = transactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  // Số dư ngân hàng lấy từ giao dịch mới nhất (phần tử đầu tiên vì list đang order DESC)
+  const currentBalance = transactions.length > 0 ? transactions[0].balanceAfterTransaction : 0;
 
   return (
     <Box className="fade-in">
@@ -85,15 +150,17 @@ export const BankBookPage: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* FILTER & BẢNG - CHUẨN RIC */}
+      {/* FILTER & BẢNG */}
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           
           {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
-              size="small" placeholder="Tìm: Mã GD/Diễn giải..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              size="small" placeholder="Tìm: Mã GD/Diễn giải... (Enter)" 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchSubmit}
               sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
@@ -105,14 +172,10 @@ export const BankBookPage: React.FC = () => {
               </Select>
             </FormControl>
 
-            <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Tạo Giao Dịch</Button>
-            <Button size="small" variant="contained" startIcon={<SyncIcon />} sx={{ bgcolor: '#39cccc', '&:hover': { bgcolor: '#33b8b8' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Đồng Bộ Bank</Button>
+            <Button onClick={() => setOpenDialog(true)} size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Tạo Giao Dịch</Button>
+            <Button onClick={fetchBankTransactions} size="small" variant="contained" startIcon={loading ? <CircularProgress size={16} color="inherit"/> : <SyncIcon />} sx={{ bgcolor: '#39cccc', '&:hover': { bgcolor: '#33b8b8' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Đồng Bộ</Button>
             <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Sổ Quỹ</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-          </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
           </Box>
 
           <TableContainer>
@@ -120,7 +183,6 @@ export const BankBookPage: React.FC = () => {
               <TableHead sx={{ bgcolor: '#ffffff' }}>
                 <TableRow>
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  
                   {['Thời Gian', 'Mã GD', 'Phân Loại', 'Diễn Giải (Nội dung CK)', 'Ghi Có (+)', 'Ghi Nợ (-)', 'Số Dư Cuối'].map((col) => (
                     <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
@@ -131,12 +193,17 @@ export const BankBookPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredTransactions.map((row) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {transactions.length === 0 && !loading && (
+                  <TableRow><TableCell colSpan={8} align="center" sx={{ py: 3 }}>Không có dữ liệu giao dịch</TableCell></TableRow>
+                )}
+                {transactions.map((row, index) => (
+                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 }, bgcolor: row.status === 'CANCELLED' ? '#f871711a' : 'inherit' }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
                     
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.date}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0284c7', p: 1.5 }}>{row.id}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+                      {dayjs(row.transactionDate).format('DD/MM/YYYY HH:mm')}
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0284c7', p: 1.5 }}>{row.code}</TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
                       {row.type === 'INCOME' ? 
@@ -146,18 +213,19 @@ export const BankBookPage: React.FC = () => {
                     </TableCell>
 
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>{row.category}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>{row.category} - {row.referenceName}</Typography>
                       <Typography variant="caption" color="text.secondary">{row.description}</Typography>
+                      {row.status === 'CANCELLED' && <Typography variant="caption" color="error" sx={{display: 'block', fontWeight: 'bold'}}>* Đã hủy</Typography>}
                     </TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#16a34a', p: 1.5 }}>
-                      {row.amountIn > 0 ? `+${formatCurrency(row.amountIn)}` : ''}
+                      {row.type === 'INCOME' ? `+${formatCurrency(row.amount)}` : ''}
                     </TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#dc2626', p: 1.5 }}>
-                      {row.amountOut > 0 ? `-${formatCurrency(row.amountOut)}` : ''}
+                      {row.type === 'EXPENSE' ? `-${formatCurrency(row.amount)}` : ''}
                     </TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#b45309', p: 1.5 }}>
-                      {formatCurrency(row.balance)}
+                      {formatCurrency(row.balanceAfterTransaction)}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -167,10 +235,37 @@ export const BankBookPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {filteredTransactions.length} of {filteredTransactions.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Hiển thị {transactions.length} giao dịch</Typography>
           </Box>
         </CardContent>
       </Card>
+
+      {/* ================= DIALOG LẬP GIAO DỊCH NGÂN HÀNG ================= */}
+      <Dialog open={openDialog} onClose={() => !loading && setOpenDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
+        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>THÊM GIAO DỊCH NGÂN HÀNG</DialogTitle>
+        <DialogContent sx={{ pt: '24px !important' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Loại giao dịch (*)</InputLabel>
+              <Select value={formData.type} label="Loại giao dịch (*)" onChange={(e) => setFormData({...formData, type: e.target.value})}>
+                <MenuItem value="INCOME">Tiền vào (Báo Có)</MenuItem>
+                <MenuItem value="EXPENSE">Tiền ra (Báo Nợ)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField size="small" label="Đối tượng (Người gửi / Người nhận) (*)" fullWidth value={formData.referenceName} onChange={(e) => setFormData({...formData, referenceName: e.target.value})} required />
+            <TextField size="small" label="Số tiền (VNĐ) (*)" type="number" fullWidth value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} required />
+            <TextField size="small" label="Nhóm phân loại (*)" placeholder="VD: Bán hàng, Trả nợ NCC..." fullWidth value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} required />
+            <TextField size="small" label="Nội dung chuyển khoản (Diễn giải)" fullWidth multiline rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
+          <Button disabled={loading} onClick={() => setOpenDialog(false)} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy Bỏ</Button>
+          <Button disabled={loading} variant="contained" onClick={handleSaveTransaction} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'Lưu Giao Dịch'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

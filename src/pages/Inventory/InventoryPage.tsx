@@ -1,13 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip, TextField, Button,
-  IconButton, Dialog, DialogTitle, DialogContent, DialogActions,
-  MenuItem, Select, FormControl, InputLabel, CircularProgress,
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  TextField,
+  Button,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem,
+  Select,
+  FormControl,
+  InputLabel,
+  CircularProgress,
 } from '@mui/material';
 import {
   Add as AddIcon,
-  Remove as RemoveIcon, // Thêm icon cho Xuất Kho
   Edit as EditIcon,
   SwapHoriz as TransferIcon,
   Warning as WarningIcon,
@@ -26,7 +45,6 @@ export const InventoryPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     productId: '',
-    storeId: '', // ✅ Thêm storeId cho Nhập/Xuất
     fromStoreId: '',
     toStoreId: '',
     quantity: '',
@@ -104,10 +122,6 @@ export const InventoryPage: React.FC = () => {
     return products.find(p => p.id === productId)?.name || 'N/A';
   };
 
-  const getStoreName = (storeId: string) => {
-    return stores.find(s => s.id === storeId)?.name || 'N/A';
-  };
-
   const getStockStatus = (quantity: number, minStock: number) => {
     if (quantity <= minStock) return { label: 'Sắp hết', color: 'error' as const };
     if (quantity <= minStock * 1.5) return { label: 'Cảnh báo', color: 'warning' as const };
@@ -118,7 +132,6 @@ export const InventoryPage: React.FC = () => {
     setDialogType(type);
     setFormData({
       productId: '',
-      storeId: '', // Reset
       fromStoreId: '',
       toStoreId: '',
       quantity: '',
@@ -132,7 +145,6 @@ export const InventoryPage: React.FC = () => {
     setOpenDialog(false);
     setFormData({
       productId: '',
-      storeId: '',
       fromStoreId: '',
       toStoreId: '',
       quantity: '',
@@ -147,18 +159,13 @@ export const InventoryPage: React.FC = () => {
     if (!formData.quantity || Number(formData.quantity) <= 0) {
       errors.quantity = 'Số lượng phải lớn hơn 0';
     }
-    
-    // ✅ Phân loại validate theo hành động
     if (dialogType === 'transfer') {
       if (!formData.fromStoreId) errors.fromStoreId = 'Vui lòng chọn cửa hàng nguồn';
       if (!formData.toStoreId) errors.toStoreId = 'Vui lòng chọn cửa hàng đích';
-      if (formData.fromStoreId && formData.toStoreId && formData.fromStoreId === formData.toStoreId) {
+      if (formData.fromStoreId === formData.toStoreId) {
         errors.toStoreId = 'Cửa hàng đích phải khác cửa hàng nguồn';
       }
-    } else {
-      if (!formData.storeId) errors.storeId = 'Vui lòng chọn cửa hàng';
     }
-    
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -175,8 +182,7 @@ export const InventoryPage: React.FC = () => {
       else if (dialogType === 'transfer') type = 'TRANSFER';
 
       const transactionData = {
-        // ✅ Khắc phục lỗi hardcode storeId: 1
-        storeId: dialogType === 'transfer' ? parseInt(formData.toStoreId) : parseInt(formData.storeId), 
+        storeId: dialogType === 'transfer' ? parseInt(formData.toStoreId) : 1, // TODO: Get from auth
         productId: parseInt(formData.productId),
         type,
         quantity: dialogType === 'export' ? -parseInt(formData.quantity) : parseInt(formData.quantity),
@@ -202,13 +208,13 @@ export const InventoryPage: React.FC = () => {
   };
 
   return (
-    <Box className="fade-in">
+    <Box>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 700, color: '#1e293b' }}>
-          Quản Lý Tồn Kho
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+          Quản Lý Kho Hàng
         </Typography>
         {isSuperAdmin() && (
-          <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               variant="contained"
               startIcon={<AddIcon />}
@@ -216,34 +222,25 @@ export const InventoryPage: React.FC = () => {
               sx={{
                 background: 'linear-gradient(45deg, #2e7d32 30%, #4caf50 90%)',
                 boxShadow: '0 3px 10px rgba(46, 125, 50, 0.3)',
-                '&:hover': { background: 'linear-gradient(45deg, #1b5e20 30%, #2e7d32 90%)', transform: 'translateY(-2px)' },
+                '&:hover': {
+                  background: 'linear-gradient(45deg, #1b5e20 30%, #2e7d32 90%)',
+                  boxShadow: '0 6px 20px rgba(46, 125, 50, 0.4)',
+                },
               }}
             >
               Nhập Kho
             </Button>
-            
-            {/* ✅ THÊM NÚT XUẤT KHO Ở ĐÂY */}
             <Button
-              variant="contained"
-              startIcon={<RemoveIcon />}
-              onClick={() => handleOpenDialog('export')}
-              sx={{
-                background: 'linear-gradient(45deg, #ed6c02 30%, #ff9800 90%)',
-                boxShadow: '0 3px 10px rgba(237, 108, 2, 0.3)',
-                '&:hover': { background: 'linear-gradient(45deg, #e65100 30%, #ed6c02 90%)', transform: 'translateY(-2px)' },
-              }}
-            >
-              Xuất Kho
-            </Button>
-
-            <Button
-              variant="contained"
+              variant="outlined"
               startIcon={<TransferIcon />}
               onClick={() => handleOpenDialog('transfer')}
               sx={{
-                background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-                boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-                '&:hover': { background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)', transform: 'translateY(-2px)' },
+                borderWidth: 2,
+                '&:hover': {
+                  borderWidth: 2,
+                  transform: 'translateY(-2px)',
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.15)',
+                },
               }}
             >
               Điều Chuyển
@@ -252,127 +249,70 @@ export const InventoryPage: React.FC = () => {
         )}
       </Box>
 
-      {loading && inventory.length === 0 ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}><CircularProgress /></Box>
-      ) : (
-        <Card sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-          <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-            <TableContainer>
-              <Table>
-                <TableHead sx={{ bgcolor: '#f8fafc' }}>
-                  <TableRow>
-                    <TableCell sx={{ fontWeight: 600 }}>Cửa Hàng</TableCell>
-                    <TableCell sx={{ fontWeight: 600 }}>Sản Phẩm</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>Tồn Kho</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>Tối Thiểu</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>Tối Đa</TableCell>
-                    <TableCell align="center" sx={{ fontWeight: 600 }}>Trạng Thái</TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>Cập Nhật Cuối</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {inventory.map((item) => {
-                    const status = getStockStatus(item.quantity, item.minStock);
-                    return (
-                      <TableRow key={item.id} hover>
-                        <TableCell sx={{ fontWeight: 500 }}>{getStoreName(item.storeId)}</TableCell>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight={600} color="primary.main">
-                            {getProductName(item.productId)}
-                          </Typography>
-                          <Typography variant="caption" color="text.secondary">ID: {item.productId}</Typography>
-                        </TableCell>
-                        <TableCell align="right">
-                          <Typography sx={{ fontWeight: 700, fontSize: '1.1rem', color: status.color === 'error' ? 'error.main' : '#1e293b' }}>
-                            {item.quantity.toLocaleString()}
-                          </Typography>
-                        </TableCell>
-                        <TableCell align="right" sx={{ color: 'text.secondary' }}>{item.minStock}</TableCell>
-                        <TableCell align="right" sx={{ color: 'text.secondary' }}>{item.maxStock || '---'}</TableCell>
-                        <TableCell align="center">
-                          <Chip
-                            label={status.label}
-                            color={status.color}
-                            size="small"
-                            variant={status.color === 'success' ? 'outlined' : 'filled'}
-                            icon={status.color === 'error' ? <WarningIcon /> : undefined}
-                            sx={{ fontWeight: 600 }}
-                          />
-                        </TableCell>
-                        <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '0.875rem' }}>
-                          {item.lastUpdated.toLocaleDateString('vi-VN')}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                  {inventory.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={7} align="center" sx={{ py: 4, color: 'text.secondary' }}>
-                        Chưa có dữ liệu tồn kho.
+      <Card>
+        <CardContent>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Mã SP</TableCell>
+                  <TableCell>Tên Sản Phẩm</TableCell>
+                  <TableCell align="right">Tồn Kho</TableCell>
+                  <TableCell align="right">Tối Thiểu</TableCell>
+                  <TableCell align="right">Tối Đa</TableCell>
+                  <TableCell>Trạng Thái</TableCell>
+                  <TableCell>Cập Nhật</TableCell>
+                  <TableCell align="right">Thao Tác</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {inventory.map((item) => {
+                  const status = getStockStatus(item.quantity, item.minStock);
+                  return (
+                    <TableRow key={item.id}>
+                      <TableCell>{item.productId}</TableCell>
+                      <TableCell>{getProductName(item.productId)}</TableCell>
+                      <TableCell align="right">
+                        <Typography sx={{ fontWeight: 600 }}>
+                          {item.quantity}
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">{item.minStock}</TableCell>
+                      <TableCell align="right">{item.maxStock}</TableCell>
+                      <TableCell>
+                        <Chip
+                          label={status.label}
+                          color={status.color}
+                          size="small"
+                          icon={status.color === 'error' ? <WarningIcon /> : undefined}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        {new Date(item.lastUpdated).toLocaleDateString('vi-VN')}
+                      </TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" color="primary">
+                          <EditIcon fontSize="small" />
+                        </IconButton>
                       </TableCell>
                     </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </CardContent>
-        </Card>
-      )}
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
 
       {/* Dialog for Import/Export/Transfer */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, color: dialogType === 'import' ? '#2e7d32' : dialogType === 'export' ? '#ed6c02' : '#1976d2' }}>
-          {dialogType === 'import' && '📥 NHẬP KHO SẢN PHẨM'}
-          {dialogType === 'export' && '📤 XUẤT KHO SẢN PHẨM'}
-          {dialogType === 'transfer' && '🔄 ĐIỀU CHUYỂN KHO'}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {dialogType === 'import' && 'Nhập Kho'}
+          {dialogType === 'export' && 'Xuất Kho'}
+          {dialogType === 'transfer' && 'Điều Chuyển Kho'}
         </DialogTitle>
-        <DialogContent dividers>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5, pt: 1 }}>
-            
-            {/* Nếu là Nhập/Xuất -> Chọn 1 cửa hàng. Nếu Điều chuyển -> Chọn Nguồn & Đích */}
-            {dialogType !== 'transfer' ? (
-              <FormControl fullWidth required error={!!formErrors.storeId}>
-                <InputLabel>Cửa Hàng Thực Hiện</InputLabel>
-                <Select
-                  label="Cửa Hàng Thực Hiện"
-                  value={formData.storeId}
-                  onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
-                >
-                  {stores.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
-                </Select>
-                {formErrors.storeId && <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>{formErrors.storeId}</Typography>}
-              </FormControl>
-            ) : (
-              <Grid container spacing={2}>
-                <Grid item xs={6}>
-                  <FormControl fullWidth required error={!!formErrors.fromStoreId}>
-                    <InputLabel>Từ Cửa Hàng (Nguồn)</InputLabel>
-                    <Select
-                      label="Từ Cửa Hàng (Nguồn)"
-                      value={formData.fromStoreId}
-                      onChange={(e) => setFormData({ ...formData, fromStoreId: e.target.value })}
-                    >
-                      {stores.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
-                    </Select>
-                    {formErrors.fromStoreId && <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>{formErrors.fromStoreId}</Typography>}
-                  </FormControl>
-                </Grid>
-                <Grid item xs={6}>
-                  <FormControl fullWidth required error={!!formErrors.toStoreId}>
-                    <InputLabel>Đến Cửa Hàng (Đích)</InputLabel>
-                    <Select
-                      label="Đến Cửa Hàng (Đích)"
-                      value={formData.toStoreId}
-                      onChange={(e) => setFormData({ ...formData, toStoreId: e.target.value })}
-                    >
-                      {stores.map((s) => (<MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>))}
-                    </Select>
-                    {formErrors.toStoreId && <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>{formErrors.toStoreId}</Typography>}
-                  </FormControl>
-                </Grid>
-              </Grid>
-            )}
-
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <FormControl fullWidth required error={!!formErrors.productId}>
               <InputLabel>Sản Phẩm</InputLabel>
               <Select
@@ -381,12 +321,59 @@ export const InventoryPage: React.FC = () => {
                 onChange={(e) => setFormData({ ...formData, productId: e.target.value })}
               >
                 {products.map((p) => (
-                  <MenuItem key={p.id} value={p.id}>{p.name} (Mã: {p.id})</MenuItem>
+                  <MenuItem key={p.id} value={p.id}>
+                    {p.name}
+                  </MenuItem>
                 ))}
               </Select>
-              {formErrors.productId && <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>{formErrors.productId}</Typography>}
+              {formErrors.productId && (
+                <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>
+                  {formErrors.productId}
+                </Typography>
+              )}
             </FormControl>
-
+            {dialogType === 'transfer' && (
+              <>
+                <FormControl fullWidth required error={!!formErrors.fromStoreId}>
+                  <InputLabel>Cửa Hàng Nguồn</InputLabel>
+                  <Select
+                    label="Cửa Hàng Nguồn"
+                    value={formData.fromStoreId}
+                    onChange={(e) => setFormData({ ...formData, fromStoreId: e.target.value })}
+                  >
+                    {stores.map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        {s.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {formErrors.fromStoreId && (
+                    <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>
+                      {formErrors.fromStoreId}
+                    </Typography>
+                  )}
+                </FormControl>
+                <FormControl fullWidth required error={!!formErrors.toStoreId}>
+                  <InputLabel>Cửa Hàng Đích</InputLabel>
+                  <Select
+                    label="Cửa Hàng Đích"
+                    value={formData.toStoreId}
+                    onChange={(e) => setFormData({ ...formData, toStoreId: e.target.value })}
+                  >
+                    {stores.map((s) => (
+                      <MenuItem key={s.id} value={s.id}>
+                        {s.name}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                  {formErrors.toStoreId && (
+                    <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>
+                      {formErrors.toStoreId}
+                    </Typography>
+                  )}
+                </FormControl>
+              </>
+            )}
             <TextField
               fullWidth
               label="Số Lượng"
@@ -400,31 +387,56 @@ export const InventoryPage: React.FC = () => {
             />
             <TextField
               fullWidth
-              label="Lý Do / Ghi chú"
+              label="Lý Do"
               value={formData.reason}
               onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
               multiline
               rows={3}
-              placeholder="Nhập lý do thực hiện giao dịch này..."
+              placeholder="Nhập lý do nhập/xuất/điều chuyển kho..."
             />
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
-          <Button onClick={handleCloseDialog} sx={{ color: 'text.secondary', fontWeight: 600 }}>
-            Hủy Bỏ
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseDialog}
+            sx={{
+              '&:hover': {
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            Hủy
           </Button>
           <Button
             variant="contained"
             onClick={handleSave}
             sx={{
-              fontWeight: 700, px: 3,
-              background: dialogType === 'import' ? 'linear-gradient(45deg, #2e7d32 30%, #4caf50 90%)'
-                : dialogType === 'export' ? 'linear-gradient(45deg, #ed6c02 30%, #ff9800 90%)'
+              background: dialogType === 'import' 
+                ? 'linear-gradient(45deg, #2e7d32 30%, #4caf50 90%)'
+                : dialogType === 'export'
+                ? 'linear-gradient(45deg, #ed6c02 30%, #ff9800 90%)'
                 : 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 4px 12px rgba(0,0,0,0.2)' }
+              boxShadow: dialogType === 'import'
+                ? '0 3px 10px rgba(46, 125, 50, 0.3)'
+                : dialogType === 'export'
+                ? '0 3px 10px rgba(237, 108, 2, 0.3)'
+                : '0 3px 10px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: dialogType === 'import'
+                  ? 'linear-gradient(45deg, #1b5e20 30%, #2e7d32 90%)'
+                  : dialogType === 'export'
+                  ? 'linear-gradient(45deg, #e65100 30%, #ed6c02 90%)'
+                  : 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: dialogType === 'import'
+                  ? '0 6px 20px rgba(46, 125, 50, 0.4)'
+                  : dialogType === 'export'
+                  ? '0 6px 20px rgba(237, 108, 2, 0.4)'
+                  : '0 6px 20px rgba(25, 118, 210, 0.4)',
+                transform: 'translateY(-2px)',
+              },
             }}
           >
-            {dialogType === 'import' ? 'Xác Nhận Nhập Kho' : dialogType === 'export' ? 'Xác Nhận Xuất Kho' : 'Xác Nhận Điều Chuyển'}
+            {dialogType === 'import' ? 'Nhập Kho' : dialogType === 'export' ? 'Xuất Kho' : 'Điều Chuyển'}
           </Button>
         </DialogActions>
       </Dialog>

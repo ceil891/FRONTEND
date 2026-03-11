@@ -70,11 +70,14 @@ apiClient.interceptors.response.use(
 
 // ==== Auth API types (phù hợp với backend) ====
 
-interface BackendLoginResponseData {
+// ==== Auth API types ====
+
+export interface BackendLoginResponseData {
   accessToken: string;
   tokenType: string;
+  role: string;      // Bổ sung lấy role từ DB
+  fullName: string;  // Bổ sung lấy tên thật từ DB
 }
-
 interface BackendBaseResponse<T = unknown> {
   success: boolean;
   message: string;
@@ -111,14 +114,7 @@ export const authAPI = {
     }
   },
 };
-export const uploadAPI = (file: File, folder = "products") => {
-  const formData = new FormData();
-  formData.append("file", file);
-  // Sử dụng apiClient để tự động đính kèm Token
-  return apiClient.post(`/api/v1/cloudinary/upload?folder=${folder}`, formData, {
-    headers: { "Content-Type": "multipart/form-data" },
-  });
-};
+
 // ==== Business API helpers ====
 
 // Kiểu trả về cơ bản từ backend cho các entity thuần (không bọc success/message)
@@ -132,23 +128,11 @@ export interface BackendSanPham {
   moTa: string | null;
   hoatDong: boolean;
   danhMuc?: {
-  id: number;      // Đổi từ danhMucId thành id
-    name: string;    // Đổi từ tenDanhMuc thành name
+    danhMucId: number;
+    tenDanhMuc: string;
   } | null;
 }
-export interface SaveSanPhamRequest {
-  maSku: string;
-  tenSanPham: string;
-  moTa?: string;
-  danhMucId: number; // Đảm bảo Backend nhận kiểu Integer/Long
-  donViId: number;
-  giaBan: number;
-  giaNhap?: number;
-  maVach?: string;
-  thuongHieu?: string;
-  hoatDong: boolean;
-  hinhAnhUrls: string[]; // Backend mong đợi một mảng chuỗi
-}
+
 export interface BackendHoaDon {
   hoaDonId: number;
   ngayLap: string;
@@ -156,52 +140,20 @@ export interface BackendHoaDon {
   chietKhau: number;
   tongPhaiThanhToan: number;
   trangThai: string;
-  // Thêm các thông tin liên quan
-  cuaHang?: { tenCuaHang: string };
-  nhanVien?: { hoTen: string };
-  khachHang?: { hoTen: string; dienThoai: string };
-  // ✅ Cấu trúc chi tiết hóa đơn để lấy tên và số lượng
-  chiTietHoaDons?: {
-    soLuong: number;
-    donGia: number;
-    thanhTien: number;
-    bienThe?: {
-      tenBienThe: string;
-      sanPham?: {
-        tenSanPham: string;
-      };
-    };
-  }[];
 }
 
 export const productAPI = {
   getAll: () => apiClient.get<BackendSanPham[]>('/api/v1/san-pham'),
-
-  getActive: () =>
-    apiClient.get<BackendSanPham[]>('/api/v1/san-pham/active'),
-
+  getActive: () => apiClient.get<BackendSanPham[]>('/api/v1/san-pham/active'),
   search: (keyword: string) =>
-    apiClient.get<BackendSanPham[]>('/api/v1/san-pham/search', {
+    apiClient.get<BackendSanPham[]>(`/api/v1/san-pham/search`, {
       params: { keyword },
     }),
-
-  getById: (id: number) =>
-    apiClient.get<BackendSanPham>(`/api/v1/san-pham/${id}`),
-
-  // ✅ ADD NEW
-  create: (data: SaveSanPhamRequest) =>
-    apiClient.post<BackendSanPham>('/api/v1/san-pham', data),
-
-  update: (id: string | number, data: SaveSanPhamRequest) =>
-    apiClient.put<BackendSanPham>(`/api/v1/san-pham/${id}`, data),
-
-  delete: (id: string | number) =>
-    apiClient.delete<void>(`/api/v1/san-pham/${id}`),
+  getById: (id: number) => apiClient.get<BackendSanPham>(`/api/v1/san-pham/${id}`),
 };
 
 export const orderAPI = {
   getAll: () => apiClient.get<BackendHoaDon[]>('/api/v1/hoa-don'),
-  create: (data: SaveHoaDonRequest) => apiClient.post<BackendHoaDon>('/api/v1/hoa-don', data),
 };
 
 // ==== Promotions API ====
@@ -234,10 +186,9 @@ export const promotionAPI = {
 
 // ==== Categories API ====
 
-// Sửa lại interface này trong client.ts
 export interface BackendCategory {
-  id: number;      // Thay vì danhMucId
-  name: string;    // Thay vì tenDanhMuc
+  id: number;
+  name: string;
   description?: string | null;
   parentId?: number | null;
   image?: string | null;
@@ -245,16 +196,7 @@ export interface BackendCategory {
   createdAt: string;
   updatedAt: string;
 }
-export interface SaveSanPhamRequest {
-  maSku: string;       // Mã định danh sản phẩm (SKU)
-  tenSanPham: string;  // Tên sản phẩm
-  moTa?: string;       // Mô tả (có thể để trống)
-  danhMucId: number;   // ID của danh mục (Bắt buộc để tránh lỗi null)
-  giaBan: number;      // Giá bán ra
-  giaNhap?: number;    // Giá nhập vào
-  maVach?: string;     // Mã vạch
-  hoatDong: boolean;   // Trạng thái hoạt động (true/false)
-}
+
 export const categoryAPI = {
   getAll: (parentId?: number) =>
     apiClient.get<BackendBaseResponse<BackendCategory[]>>('/api/v1/danh-muc', {
@@ -668,30 +610,53 @@ export const reportAPI = {
       params: { startDate, endDate },
     }),
 };
-export interface SaveHoaDonRequest {
-  tamTinh: number;
-  chietKhau: number;
-  tongPhaiThanhToan: number;
-  trangThai: string; 
-  phuongThucThanhToan: string; 
-  chiTiet: {
-    sanPhamId: number;
-    soLuong: number;
-    giaBan: number;
-    thanhTien: number;
-  }[];
+// ==== Cashbook API (Sổ quỹ & Công nợ) ====
+
+export interface BackendCashbookTransaction {
+  id: number;
+  code: string;
+  transactionDate: string;
+  type: 'INCOME' | 'EXPENSE';
+  method: 'CASH' | 'BANK_TRANSFER' | 'CARD';
+  category: string;
+  description: string;
+  referenceName: string;
+  amount: number;
+  balanceAfterTransaction: number;
+  storeName: string;
+  creatorName: string;
+  status: string;
 }
 
-export interface BackendHoaDon {
-  hoaDonId: number;
-  ngayLap: string;
-  tamTinh: number;
-  chietKhau: number;
-  tongPhaiThanhToan: number;
-  trangThai: string;
+export interface CreateCashbookRequest {
+  type: 'INCOME' | 'EXPENSE';
+  method: 'CASH' | 'BANK_TRANSFER' | 'CARD';
+  category: string;
+  description: string;
+  referenceName: string;
+  amount: number;
+  storeId: number;
+  creatorId: number;
 }
 
-// 2. Khai báo orderAPI để React có thể gọi
-
+export const cashbookAPI = {
+  // Lấy danh sách giao dịch (hỗ trợ lọc theo type, method, search)
+  getAll: (method?: string, type?: string, search?: string) =>
+    apiClient.get<BackendBaseResponse<BackendCashbookTransaction[]>>('/api/finance/cashbooks', {
+      params: { 
+        method, 
+        type: type === 'ALL' ? undefined : type, 
+        search: search || undefined 
+      },
+    }),
+  
+  // Tạo giao dịch mới
+  create: (data: CreateCashbookRequest) =>
+    apiClient.post<BackendBaseResponse<BackendCashbookTransaction>>('/api/finance/cashbooks', data),
+    
+  // Hủy giao dịch
+  cancel: (id: number) =>
+    apiClient.patch<BackendBaseResponse<BackendCashbookTransaction>>(`/api/finance/cashbooks/${id}/cancel`),
+};
 export default apiClient;
 

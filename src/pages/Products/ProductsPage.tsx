@@ -1,30 +1,45 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
-  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Button, TextField,
-  Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
-  FormControl, InputLabel, Select, Chip, CircularProgress, Tooltip, Checkbox, Pagination
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Button,
+  IconButton,
+  TextField,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  Chip,
 } from '@mui/material';
 import {
-  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, 
-  Print as PrintIcon, FileUpload as ImportIcon, FileDownload as ExcelIcon, 
-  FilterAlt as FilterIcon
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Search as SearchIcon,
 } from '@mui/icons-material';
 import { Product } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
 import {
-  productAPI, categoryAPI, uploadAPI, BackendCategory, SaveSanPhamRequest
+  categoryAPI,
+  productAPI,
+  
+  type BackendSanPham,
+
 } from '../../api/client';
-
-const UNIT_OPTIONS = [
-  { id: 1, label: "Cái" }, { id: 2, label: "Lon" },
-  { id: 3, label: "Chai" }, { id: 4, label: "Kg" }, { id: 5, label: "Thùng" },
-];
-
-const UNIT_MAP: Record<number, string> = {
-  1: "Cái", 2: "Lon", 3: "Chai", 4: "Kg", 5: "Thùng"
-};
 
 export const ProductsPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
@@ -32,338 +47,534 @@ export const ProductsPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
-  const [uploading, setUploading] = useState(false);
-  
+
   const [formData, setFormData] = useState({
-    code: '', name: '', description: '', categoryId: '' as string | number,
-    price: '', costPrice: '', unitId: 1, barcode: '', 
-    thuongHieu: '', hinhAnhUrl: '', isActive: true,
+    code: '',
+    name: '',
+    description: '',
+    categoryId: '',
+    price: '',
+    costPrice: '',
+    unit: 'Cái',
+    barcode: '',
+    isActive: true,
   });
 
   const [formErrors, setFormErrors] = useState<Record<string, string>>({});
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<{ id: string; name: string }[]>([]);
+  const [units, setUnits] = useState<BackendDonVi[]>([]);
+  const [imageFile, setImageFile] = useState<File | null>(null);
+  const [imagePreview, setImagePreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [categories, setCategories] = useState<BackendCategory[]>([]);
 
-  // ================= LOGIC API (GIỮ NGUYÊN 100%) =================
-  const mapBackendToProduct = (sp: any): Product => {
-    const dm = sp.danhMuc || null;
-    const catId = dm ? (dm.danhMucId || dm.id) : null;
-    return {
-      id: String(sp.sanPhamId), code: sp.maSku, name: sp.tenSanPham, description: sp.moTa || undefined,
-      categoryId: catId, price: Number(sp.giaBan ?? 0), costPrice: sp.giaNhap != null ? Number(sp.giaNhap) : undefined,
-      unit: 'Cái', barcode: sp.maVach || undefined, isActive: !!sp.hoatDong,
-      createdAt: new Date(), updatedAt: new Date(),
-      ...({ donViId: sp.donViId || 1, thuongHieu: sp.thuongHieu || '', hinhAnhUrls: sp.hinhAnhUrls || [] }) 
-    };
-  };
+  useEffect(() => {
+    void loadInitialData();
+  }, []);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    try {
-      setUploading(true);
-      const res = await uploadAPI(file);
-      const imageUrl = res.data.secure_url || res.data.data?.secure_url;
-      if (imageUrl) {
-        setFormData(prev => ({ ...prev, hinhAnhUrl: imageUrl }));
-        showToast('Tải ảnh thành công', 'success');
-      }
-    } catch (err: any) {
-      showToast('Lỗi upload: ' + (err.response?.data?.message || err.message), 'error');
-    } finally { setUploading(false); }
-  };
-
-  const loadData = async () => {
+  const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [prodRes, catRes] = await Promise.all([productAPI.getAll(), categoryAPI.getAll()]);
-      
-      let listSP: any[] = [];
-      const rawProd = prodRes.data;
-      if (Array.isArray(rawProd)) listSP = rawProd;
-      else if (rawProd && typeof rawProd === 'object') listSP = (rawProd as any).data || (rawProd as any).content || [];
+      const [prodRes, catRes, unitRes] = await Promise.all([
+        productAPI.getAll(),
+        categoryAPI.getAll(),
+        unitAPI.getAll(),
+      ]);
 
-      let listDM: any[] = [];
-      const rawCat = catRes.data;
-      if (Array.isArray(rawCat)) listDM = rawCat;
-      else if (rawCat && typeof rawCat === 'object') listDM = (rawCat as any).data || (rawCat as any).content || [];
+      const backendProducts = prodRes.data || [];
+      const mappedProducts: Product[] = backendProducts.map((sp: BackendSanPham) => ({
+        id: String(sp.sanPhamId),
+        code: sp.maSku,
+        name: sp.tenSanPham,
+        description: sp.moTa || undefined,
+        categoryId: sp.danhMucId ? String(sp.danhMucId) : '',
+        price: Number(sp.giaBan ?? 0),
+        costPrice: sp.giaNhap != null ? Number(sp.giaNhap) : undefined,
+        unit: sp.tenDonVi || 'Cái',
+        barcode: sp.maVach || undefined,
+        isActive: !!sp.hoatDong,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      }));
+      setProducts(mappedProducts);
 
-      setProducts(listSP.map(mapBackendToProduct));
-      setCategories(listDM);
-    } catch (err: any) {
-      console.error("LỖI LOAD DỮ LIỆU:", err);
-      showToast('Không tải được dữ liệu', 'error');
-    } finally { setLoading(false); }
+      if (catRes.data.success) {
+        const list = catRes.data.data || [];
+        setCategories(
+          list.map((c: any) => ({
+            id: String(c.id),
+            name: c.name || c.tenDanhMuc || c.ten || 'Danh mục',
+          })),
+        );
+      }
+
+      const unitList = unitRes.data || [];
+      setUnits(unitList);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải danh sách sản phẩm', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => { void loadData(); }, []);
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN', {
+      style: 'currency',
+      currency: 'VND',
+    }).format(value);
+  };
 
-  const categoryMap = useMemo(() => {
-    const map: Record<number, string> = {};
-    categories.forEach((c: any) => { 
-        const id = c.danhMucId || c.id;
-        if (id) map[id] = c.tenDanhMuc || c.name; 
-    });
-    return map;
-  }, [categories]);
+  const filteredProducts = products.filter(p =>
+    p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    p.code.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   const handleOpenDialog = (product?: Product) => {
     if (product) {
-        const pExtra = product as any;
-        setEditingProduct(product);
-        setFormData({
-            code: product.code, name: product.name, description: product.description || '',
-            categoryId: product.categoryId || '', price: product.price.toString(),
-            costPrice: product.costPrice?.toString() || '', unitId: pExtra.donViId || 1,
-            barcode: product.barcode || '', thuongHieu: pExtra.thuongHieu || '',
-            hinhAnhUrl: pExtra.hinhAnhUrls?.[0] || '', isActive: product.isActive,
-        });
+      setEditingProduct(product);
+      setFormData({
+        code: product.code,
+        name: product.name,
+        description: product.description || '',
+        categoryId: product.categoryId,
+        price: product.price.toString(),
+        costPrice: product.costPrice?.toString() || '',
+        unit: product.unit,
+        barcode: product.barcode || '',
+        isActive: product.isActive,
+      });
+      setImageFile(null);
+      setImagePreview(null);
     } else {
       setEditingProduct(null);
       setFormData({
-        code: '', name: '', description: '', categoryId: '', price: '', costPrice: '', 
-        unitId: 1, barcode: '', thuongHieu: '', hinhAnhUrl: '', isActive: true,
+        code: '',
+        name: '',
+        description: '',
+        categoryId: '',
+        price: '',
+        costPrice: '',
+        unit: 'Cái',
+        barcode: '',
+        isActive: true,
       });
     }
     setFormErrors({});
     setOpenDialog(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if (window.confirm("Bạn có chắc chắn muốn xóa sản phẩm này không?")) {
-      try {
-        await productAPI.delete(id);
-        showToast('Xóa sản phẩm thành công!', 'success');
-        await loadData();
-      } catch (err: any) {
-        showToast('Không thể xóa: ' + (err.response?.data?.message || err.message), 'error');
-      }
-    }
+  const handleCloseDialog = () => {
+    setOpenDialog(false);
+    setEditingProduct(null);
+    setFormData({
+      code: '',
+      name: '',
+      description: '',
+      categoryId: '',
+      price: '',
+      costPrice: '',
+      unit: 'Cái',
+      barcode: '',
+      isActive: true,
+    });
+    setFormErrors({});
+    setImageFile(null);
+    setImagePreview(null);
   };
 
-  const handleSave = async () => {
-    if (!formData.categoryId) { showToast("Vui lòng chọn danh mục", "error"); return; }
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    if (!formData.code.trim()) errors.code = 'Mã sản phẩm là bắt buộc';
+    if (!formData.name.trim()) errors.name = 'Tên sản phẩm là bắt buộc';
+    if (!formData.categoryId) errors.categoryId = 'Vui lòng chọn danh mục';
+    if (!formData.price || Number(formData.price) <= 0) {
+      errors.price = 'Giá bán phải lớn hơn 0';
+    }
+    if (formData.costPrice && Number(formData.costPrice) <= 0) {
+      errors.costPrice = 'Giá nhập phải lớn hơn 0';
+    }
+    if (!formData.unit.trim()) errors.unit = 'Đơn vị là bắt buộc';
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSave = () => {
+    if (!validateForm()) {
+      showToast('Vui lòng điền đầy đủ thông tin', 'warning');
+      return;
+    }
+
+    void saveToBackend();
+  };
+
+  const saveToBackend = async () => {
     try {
-      const payload: SaveSanPhamRequest = {
-        maSku: String(formData.code).trim(), tenSanPham: String(formData.name).trim(),
-        moTa: formData.description || "", danhMucId: Number(formData.categoryId),
-        donViId: Number(formData.unitId || 1), giaBan: Number(formData.price || 0),
-        giaNhap: Number(formData.costPrice || 0), thuongHieu: String(formData.thuongHieu || "N/A"),
-        hoatDong: Boolean(formData.isActive), hinhAnhUrls: formData.hinhAnhUrl ? [formData.hinhAnhUrl] : []
+      setLoading(true);
+
+      let uploadedUrls: string[] | undefined;
+      if (imageFile) {
+        const form = new FormData();
+        form.append('file', imageFile);
+        form.append('folder', 'products');
+        const res = await fetch('http://localhost:8080/api/v1/cloudinary/upload?folder=products', {
+          method: 'POST',
+          body: form,
+        });
+        const data = await res.json();
+        if (data.secure_url) {
+          uploadedUrls = [data.secure_url];
+        }
+      }
+
+      const selectedUnit =
+        units.find((u) => u.tenDonVi === formData.unit) ||
+        units[0];
+
+      const payload = {
+        maSku: formData.code,
+        tenSanPham: formData.name,
+        danhMucId: Number(formData.categoryId),
+        donViId: selectedUnit ? selectedUnit.donViId : 1,
+        giaBan: Number(formData.price),
+        giaNhap: formData.costPrice ? Number(formData.costPrice) : undefined,
+        maVach: formData.barcode || undefined,
+        moTa: formData.description || undefined,
+        hoatDong: formData.isActive,
+        thuongHieu: undefined,
+        hinhAnhUrls: uploadedUrls,
       };
 
-      if (editingProduct) await productAPI.update(editingProduct.id, payload);
-      else await productAPI.create(payload);
+      if (editingProduct) {
+        await productAPI.update(Number(editingProduct.id), payload);
+        showToast('Cập nhật sản phẩm thành công', 'success');
+      } else {
+        await productAPI.create(payload);
+        showToast('Thêm sản phẩm thành công', 'success');
+      }
 
-      showToast('Lưu sản phẩm thành công!', 'success');
-      setOpenDialog(false);
-      await loadData(); 
-    } catch (err: any) {
-      showToast('Lỗi lưu: ' + (err.response?.data?.message || err.message), 'error');
+      await loadInitialData();
+      handleCloseDialog();
+    } catch (error: any) {
+      showToast(
+        error.response?.data?.message || error.message || 'Lỗi khi lưu sản phẩm',
+        'error',
+      );
+    } finally {
+      setLoading(false);
     }
   };
 
-  // ================= GIAO DIỆN CHUẨN RIC =================
-  const filteredProducts = products.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    p.code.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const handleDelete = async (id: string) => {
+    if (!window.confirm('Bạn có chắc chắn muốn xóa sản phẩm này?')) return;
+    try {
+      setLoading(true);
+      await productAPI.delete(Number(id));
+      showToast('Xóa sản phẩm thành công', 'success');
+      await loadInitialData();
+    } catch (error: any) {
+      showToast(
+        error.response?.data?.message || error.message || 'Lỗi khi xóa sản phẩm',
+        'error',
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
-    <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          DANH MỤC HÀNG HÓA
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>
+          Quản Lý Sản Phẩm
         </Typography>
+        {isSuperAdmin() && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+            sx={{
+              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
+              },
+            }}
+          >
+            Thêm Sản Phẩm
+          </Button>
+        )}
       </Box>
 
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          {/* THANH TOOLBAR ĐA MÀU SẮC */}
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Mã SKU/Tên Sản Phẩm..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 280, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            
-            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm</Button>
-            <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xóa</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Tem</Button>
-            <Button size="small" variant="contained" startIcon={<ImportIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Import</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-          </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer sx={{ minHeight: 400 }}>
-            <Table sx={{ minWidth: 1300 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 60, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Ảnh</TableCell>
-                  
-                  {['Mã SKU', 'Tên sản phẩm', 'Danh mục', 'Giá bán', 'Giá nhập', 'Đơn vị', 'Trạng thái'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {loading ? (
-                   <TableRow>
-                     <TableCell colSpan={11} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell>
-                   </TableRow>
-                ) : filteredProducts.length === 0 ? (
-                   <TableRow>
-                     <TableCell colSpan={11} align="center" sx={{ py: 5, color: 'text.secondary' }}>Không có dữ liệu hàng hóa</TableCell>
-                   </TableRow>
-                ) : (
-                  filteredProducts.map((p, index) => {
-                    const pExtra = p as any;
-                    return (
-                      <TableRow key={p.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                        
-                        {/* Cột Thao tác kiểu Nút vuông */}
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                          <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                            <Box onClick={() => handleOpenDialog(p)} sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
-                            <Box onClick={() => handleDelete(p.id)} sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><DeleteIcon sx={{ fontSize: 14 }} /></Box>
-                          </Box>
-                        </TableCell>
-                        
-                        {/* Ảnh */}
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                          <Box component="img" src={pExtra.hinhAnhUrls?.[0] || 'https://via.placeholder.com/40?text=No+Img'} sx={{ width: 40, height: 40, borderRadius: 1, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
-                        </TableCell>
-
-                        {/* Mã SKU */}
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{p.code}</TableCell>
-                        
-                        {/* Tên SP & Thương hiệu */}
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                          <Typography variant="body2" fontWeight={600} color="#0f172a">{p.name}</Typography>
-                          {pExtra.thuongHieu && <Typography variant="caption" sx={{ color: '#64748b' }}>{pExtra.thuongHieu}</Typography>}
-                        </TableCell>
-                        
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0284c7', p: 1.5 }}>
-                          {categoryMap[p.categoryId] || '---'}
-                        </TableCell>
-                        
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#dc2626', p: 1.5 }}>
-                          {new Intl.NumberFormat('vi-VN').format(p.price)}
-                        </TableCell>
-                        
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#16a34a', p: 1.5 }}>
-                          {p.costPrice ? new Intl.NumberFormat('vi-VN').format(p.costPrice) : '---'}
-                        </TableCell>
-
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
-                          {UNIT_MAP[pExtra.donViId] || 'Cái'}
-                        </TableCell>
-
-                        <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                          {p.isActive ? 
-                            <Chip label="Đang bán" size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                            <Chip label="Ngừng bán" size="small" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                          }
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-               {filteredProducts.length > 0 ? `1 - ${filteredProducts.length} of ${filteredProducts.length} items` : 'No items to display'}
-             </Typography>
-          </Box>
+      <Card sx={{ mb: 3 }}>
+        <CardContent>
+          <TextField
+            fullWidth
+            placeholder="Tìm kiếm sản phẩm..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            InputProps={{
+              startAdornment: <SearchIcon sx={{ mr: 1, color: 'text.secondary' }} />,
+            }}
+          />
         </CardContent>
       </Card>
 
-      {/* ================= DIALOG FORM (GIỮ NGUYÊN HOÀN TOÀN) ================= */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>
-          {editingProduct ? 'CẬP NHẬT HÀNG HÓA' : 'THÊM MỚI HÀNG HÓA'}
+      <Card>
+        <CardContent>
+          <TableContainer>
+            <Table>
+              <TableHead>
+                <TableRow>
+                  <TableCell>Mã SP</TableCell>
+                  <TableCell>Tên Sản Phẩm</TableCell>
+                  <TableCell>Danh Mục</TableCell>
+                  <TableCell align="right">Giá Bán</TableCell>
+                  <TableCell align="right">Giá Nhập</TableCell>
+                  <TableCell>Đơn Vị</TableCell>
+                  <TableCell>Trạng Thái</TableCell>
+                  <TableCell align="right">Thao Tác</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {filteredProducts.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>{product.code}</TableCell>
+                    <TableCell>
+                      <Typography sx={{ fontWeight: 500 }}>
+                        {product.name}
+                      </Typography>
+                      {product.description && (
+                        <Typography variant="caption" color="text.secondary">
+                          {product.description}
+                        </Typography>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {categories.find((c) => c.id === product.categoryId)?.name ||
+                        product.categoryId}
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography sx={{ fontWeight: 600, color: 'primary.main' }}>
+                        {formatCurrency(product.price)}
+                      </Typography>
+                    </TableCell>
+                    <TableCell align="right">
+                      {product.costPrice ? formatCurrency(product.costPrice) : 'N/A'}
+                    </TableCell>
+                    <TableCell>{product.unit}</TableCell>
+                    <TableCell>
+                      <Chip
+                        label={product.isActive ? 'Hoạt động' : 'Ngừng'}
+                        color={product.isActive ? 'success' : 'default'}
+                        size="small"
+                      />
+                    </TableCell>
+                    <TableCell align="right">
+                      {isSuperAdmin() && (
+                        <>
+                          <IconButton size="small" color="primary" onClick={() => handleOpenDialog(product)}>
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton
+                            size="small"
+                            color="error"
+                            onClick={() => handleDelete(product.id)}
+                          >
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
+                        </>
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </CardContent>
+      </Card>
+
+      {/* Add/Edit Product Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <DialogTitle>
+          {editingProduct ? 'Chỉnh Sửa Sản Phẩm' : 'Thêm Sản Phẩm Mới'}
         </DialogTitle>
-        <DialogContent sx={{ pt: '24px !important' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-            
-            <Box sx={{ p: 2.5, border: '1px dashed #cbd5e1', borderRadius: 2, bgcolor: '#f8fafc', display: 'flex', alignItems: 'center', gap: 3 }}>
-              <Box sx={{ flex: 1 }}>
-                <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1, color: '#334155' }}>Hình ảnh đại diện</Typography>
-                <Button variant="outlined" component="label" startIcon={uploading ? <CircularProgress size={20} /> : <AddIcon />} disabled={uploading} sx={{ textTransform: 'none', borderRadius: 2 }}>
-                  {uploading ? 'Đang tải...' : 'Chọn từ máy'}
-                  <input type="file" hidden accept="image/*" onChange={handleFileChange} />
-                </Button>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                fullWidth
+                label="Mã Sản Phẩm"
+                value={formData.code}
+                onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })}
+                required
+                error={!!formErrors.code}
+                helperText={formErrors.code}
+              />
+              <TextField
+                fullWidth
+                label="Mã Vạch"
+                value={formData.barcode}
+                onChange={(e) => setFormData({ ...formData, barcode: e.target.value })}
+              />
+              <Button
+                component="label"
+                variant="outlined"
+                sx={{ alignSelf: 'flex-end', mt: 0.5 }}
+              >
+                Chọn Hình Ảnh
+                <input
+                  hidden
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0] || null;
+                    setImageFile(file);
+                    if (file) {
+                      setImagePreview(URL.createObjectURL(file));
+                    } else {
+                      setImagePreview(null);
+                    }
+                  }}
+                />
+              </Button>
+            </Box>
+            {imagePreview && (
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="caption">Xem trước hình ảnh:</Typography>
+                <Box
+                  component="img"
+                  src={imagePreview}
+                  alt="preview"
+                  sx={{
+                    display: 'block',
+                    mt: 1,
+                    width: 160,
+                    height: 160,
+                    objectFit: 'cover',
+                    borderRadius: 2,
+                  }}
+                />
               </Box>
-              <Box sx={{ width: 120, height: 120, border: '1px solid #e2e8f0', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: '#fff', overflow: 'hidden' }}>
-                {formData.hinhAnhUrl ? <img src={formData.hinhAnhUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="Product"/> : <Typography variant="caption" color="text.secondary">Trống</Typography>}
-              </Box>
-            </Box>
-
+            )}
+            <TextField
+              fullWidth
+              label="Tên Sản Phẩm"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
+              error={!!formErrors.name}
+              helperText={formErrors.name}
+            />
+            <TextField
+              fullWidth
+              label="Mô Tả"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              multiline
+              rows={3}
+            />
+            <FormControl fullWidth required error={!!formErrors.categoryId}>
+              <InputLabel>Danh Mục</InputLabel>
+              <Select
+                label="Danh Mục"
+                value={formData.categoryId}
+                onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}
+              >
+                {categories.map((cat) => (
+                  <MenuItem key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </MenuItem>
+                ))}
+              </Select>
+              {formErrors.categoryId && (
+                <Typography variant="caption" color="error" sx={{ ml: 1.5, mt: 0.5 }}>
+                  {formErrors.categoryId}
+                </Typography>
+              )}
+            </FormControl>
             <Box sx={{ display: 'flex', gap: 2 }}>
-              <FormControl fullWidth size="small" error={!!formErrors.categoryId}>
-                <InputLabel id="category-label">Danh Mục</InputLabel>
-                <Select labelId="category-label" label="Danh Mục" value={formData.categoryId} onChange={(e) => setFormData({ ...formData, categoryId: e.target.value })}>
-                  {categories.map((cat: any) => (
-                    <MenuItem key={cat.id || cat.danhMucId} value={cat.id || cat.danhMucId}>{cat.name || cat.tenDanhMuc}</MenuItem>
-                  ))}
-                </Select>
-              </FormControl>
-              <TextField fullWidth size="small" label="Thương Hiệu" value={formData.thuongHieu} onChange={(e) => setFormData({ ...formData, thuongHieu: e.target.value })} />
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField fullWidth size="small" label="Mã SKU" value={formData.code} onChange={(e) => setFormData({ ...formData, code: e.target.value.toUpperCase() })} />
-              <TextField fullWidth size="small" label="Tên Sản Phẩm (*)" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required />
-            </Box>
-
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField fullWidth size="small" label="Giá Bán (*)" type="number" value={formData.price} onChange={(e) => setFormData({ ...formData, price: e.target.value })} required />
-              <TextField fullWidth size="small" label="Giá Nhập" type="number" value={formData.costPrice} onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })} />
-            </Box>
-
-            <Box>
-              <TextField 
-                fullWidth size="small" label="Mô Tả Sản Phẩm" multiline rows={3} 
-                placeholder="Nhập thông tin chi tiết về tính năng, chất liệu..."
-                value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} 
+              <TextField
+                fullWidth
+                label="Giá Bán (VNĐ)"
+                type="number"
+                value={formData.price}
+                onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                required
+                error={!!formErrors.price}
+                helperText={formErrors.price}
+                InputProps={{
+                  inputProps: { min: 0, step: 1000 },
+                }}
+              />
+              <TextField
+                fullWidth
+                label="Giá Nhập (VNĐ)"
+                type="number"
+                value={formData.costPrice}
+                onChange={(e) => setFormData({ ...formData, costPrice: e.target.value })}
+                error={!!formErrors.costPrice}
+                helperText={formErrors.costPrice}
+                InputProps={{
+                  inputProps: { min: 0, step: 1000 },
+                }}
               />
             </Box>
-
-            <Box sx={{ display: 'flex', gap: 3, alignItems: 'center' }}>
-              <TextField sx={{ width: '50%' }} size="small" label="Đơn Vị" select SelectProps={{ native: true }} value={formData.unitId} onChange={(e) => setFormData({ ...formData, unitId: Number(e.target.value) })}>
-                {UNIT_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                fullWidth
+                label="Đơn Vị"
+                value={formData.unit}
+                onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                required
+                error={!!formErrors.unit}
+                helperText={formErrors.unit}
+                select
+                SelectProps={{ native: true }}
+              >
+                <option value="Cái">Cái</option>
+                <option value="Lon">Lon</option>
+                <option value="Chai">Chai</option>
+                <option value="Kg">Kg</option>
+                <option value="Thùng">Thùng</option>
               </TextField>
-              <Chip 
-                label={formData.isActive ? 'Đang hoạt động' : 'Ngừng hoạt động'} 
-                color={formData.isActive ? 'success' : 'default'} 
-                onClick={() => setFormData({ ...formData, isActive: !formData.isActive })} 
-                sx={{ cursor: 'pointer', fontWeight: 600 }} 
-              />
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1 }}>
+                <Typography>Trạng thái:</Typography>
+                <Chip
+                  label={formData.isActive ? 'Hoạt động' : 'Ngừng'}
+                  color={formData.isActive ? 'success' : 'default'}
+                  onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
+                  sx={{ cursor: 'pointer' }}
+                />
+              </Box>
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Button onClick={() => setOpenDialog(false)} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy</Button>
-          <Button variant="contained" onClick={handleSave} disabled={uploading} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
-            Lưu Thay Đổi
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseDialog}
+            sx={{
+              '&:hover': {
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            Hủy
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            sx={{
+              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            {editingProduct ? 'Cập Nhật' : 'Tạo Mới'}
           </Button>
         </DialogActions>
       </Dialog>
