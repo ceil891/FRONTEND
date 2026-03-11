@@ -1,14 +1,29 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box, Card, CardContent, Typography, Button, Dialog, DialogTitle,
-  DialogContent, DialogActions, TextField, Checkbox, Chip, MenuItem,
-  FormControl, InputLabel, Select, CircularProgress, TableContainer,
-  Table, TableHead, TableRow, TableCell, TableBody, Pagination
+  Box,
+  Card,
+  CardContent,
+  Typography,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  IconButton,
+  Grid,
+  Chip,
+  MenuItem,
+  FormControl,
+  InputLabel,
+  Select,
+  CircularProgress,
 } from '@mui/material';
 import {
-  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
-  Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  Category as CategoryIcon
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  Category as CategoryIcon,
 } from '@mui/icons-material';
 import { Category } from '../../types';
 import { useToastStore } from '../../store/toastStore';
@@ -21,12 +36,12 @@ export const CategoriesPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
-  const [searchQuery, setSearchQuery] = useState('');
 
   const [categories, setCategories] = useState<Category[]>([]);
 
-  // ================= LOGIC API (GIỮ NGUYÊN 100%) =================
-  useEffect(() => { loadCategories(); }, []);
+  useEffect(() => {
+    loadCategories();
+  }, []);
 
   const loadCategories = async () => {
     try {
@@ -54,19 +69,29 @@ export const CategoriesPage: React.FC = () => {
   };
 
   const [formData, setFormData] = useState({
-    name: '', description: '', parentId: '', isActive: true,
+    name: '',
+    description: '',
+    parentId: '',
+    isActive: true,
   });
 
   const handleOpenDialog = (category?: Category) => {
     if (category) {
       setEditingCategory(category);
       setFormData({
-        name: category.name, description: category.description || '',
-        parentId: category.parentId || '', isActive: category.isActive,
+        name: category.name,
+        description: category.description || '',
+        parentId: category.parentId || '',
+        isActive: category.isActive,
       });
     } else {
       setEditingCategory(null);
-      setFormData({ name: '', description: '', parentId: '', isActive: true });
+      setFormData({
+        name: '',
+        description: '',
+        parentId: '',
+        isActive: true,
+      });
     }
     setOpenDialog(true);
   };
@@ -74,7 +99,12 @@ export const CategoriesPage: React.FC = () => {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingCategory(null);
-    setFormData({ name: '', description: '', parentId: '', isActive: true });
+    setFormData({
+      name: '',
+      description: '',
+      parentId: '',
+      isActive: true,
+    });
   };
 
   const handleSave = async () => {
@@ -82,10 +112,13 @@ export const CategoriesPage: React.FC = () => {
       showToast('Vui lòng nhập tên danh mục', 'warning');
       return;
     }
+
     try {
       if (editingCategory) {
+        // Update
         const response = await categoryAPI.update(parseInt(editingCategory.id), {
-          name: formData.name, description: formData.description || undefined,
+          name: formData.name,
+          description: formData.description || undefined,
           parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
           isActive: formData.isActive,
         });
@@ -94,8 +127,10 @@ export const CategoriesPage: React.FC = () => {
           loadCategories();
         }
       } else {
+        // Create
         const response = await categoryAPI.create({
-          name: formData.name, description: formData.description || undefined,
+          name: formData.name,
+          description: formData.description || undefined,
           parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
           isActive: formData.isActive,
         });
@@ -131,129 +166,130 @@ export const CategoriesPage: React.FC = () => {
   };
 
   const topLevelCategories = categories.filter(cat => !cat.parentId);
-  
-  const filteredCategories = categories.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const childCategories = categories.filter(cat => cat.parentId);
+
+  if (loading) {
+    return (
+      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
+        <CircularProgress />
+      </Box>
+    );
+  }
 
   return (
-    <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          DANH MỤC SẢN PHẨM
+    <Box>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CategoryIcon color="primary" />
+          Quản Lý Danh Mục
         </Typography>
+        {isSuperAdmin() && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={() => handleOpenDialog()}
+            sx={{
+              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
+              },
+            }}
+          >
+            Thêm Danh Mục
+          </Button>
+        )}
       </Box>
 
-      {/* ================= BẢNG GIAO DIỆN CHUẨN RIC ================= */}
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          {/* THANH TOOLBAR */}
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Tên danh mục..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            
-            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm Danh Mục</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Danh Sách</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-          </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer sx={{ minHeight: 400 }}>
-            <Table sx={{ minWidth: 1000 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  
-                  {['Tên Danh Mục', 'Danh Mục Cha', 'Mô Tả', 'Trạng Thái'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {loading ? (
-                   <TableRow>
-                     <TableCell colSpan={7} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell>
-                   </TableRow>
-                ) : filteredCategories.length === 0 ? (
-                   <TableRow>
-                     <TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>Chưa có danh mục nào</TableCell>
-                   </TableRow>
-                ) : (
-                  filteredCategories.map((row, index) => (
-                    <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                      
-                      {/* Cột Thao tác */}
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                          <Box onClick={() => handleOpenDialog(row)} sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
-                          <Box onClick={() => handleDelete(row.id)} sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><DeleteIcon sx={{ fontSize: 14 }} /></Box>
-                        </Box>
-                      </TableCell>
-                      
-                      {/* Dữ liệu */}
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>
-                        {row.name}
-                      </TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0284c7', fontWeight: 500, p: 1.5 }}>
-                        {getParentName(row.parentId) || '---'}
-                      </TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
-                        {row.description || '---'}
-                      </TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                        {row.isActive ? 
-                          <Chip label="Hoạt động" size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                          <Chip label="Ngừng" size="small" sx={{ bgcolor: '#f1f5f9', color: '#64748b', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                        }
-                      </TableCell>
-                    </TableRow>
-                  ))
+      <Grid container spacing={3}>
+        {topLevelCategories.map((category) => (
+          <Grid item xs={12} md={6} lg={4} key={category.id}>
+            <Card>
+              <CardContent>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
+                  <Box>
+                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                      {category.name}
+                    </Typography>
+                    {category.description && (
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                        {category.description}
+                      </Typography>
+                    )}
+                  </Box>
+                  <Chip
+                    label={category.isActive ? 'Hoạt động' : 'Ngừng'}
+                    color={category.isActive ? 'success' : 'default'}
+                    size="small"
+                  />
+                </Box>
+                {childCategories.filter(cat => cat.parentId === category.id).length > 0 && (
+                  <Box sx={{ mt: 2 }}>
+                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                      Danh mục con:
+                    </Typography>
+                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                      {childCategories
+                        .filter(cat => cat.parentId === category.id)
+                        .map(child => (
+                          <Chip key={child.id} label={child.name} size="small" variant="outlined" />
+                        ))}
+                    </Box>
+                  </Box>
                 )}
-              </TableBody>
-            </Table>
-          </TableContainer>
+                {isSuperAdmin() && (
+                  <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      startIcon={<EditIcon />}
+                      onClick={() => handleOpenDialog(category)}
+                      fullWidth
+                    >
+                      Sửa
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="outlined"
+                      color="error"
+                      startIcon={<DeleteIcon />}
+                      onClick={() => handleDelete(category.id)}
+                      fullWidth
+                    >
+                      Xóa
+                    </Button>
+                  </Box>
+                )}
+              </CardContent>
+            </Card>
+          </Grid>
+        ))}
+      </Grid>
 
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-               {filteredCategories.length > 0 ? `1 - ${filteredCategories.length} of ${filteredCategories.length} items` : 'No items to display'}
-             </Typography>
-          </Box>
-        </CardContent>
-      </Card>
-
-      {/* ================= DIALOG FORM (GIỮ NGUYÊN HOÀN TOÀN TỪ CODE CŨ) ================= */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>
-          {editingCategory ? 'CHỈNH SỬA DANH MỤC' : 'THÊM DANH MỤC MỚI'}
+      {/* Add/Edit Dialog */}
+      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>
+          {editingCategory ? 'Chỉnh Sửa Danh Mục' : 'Thêm Danh Mục Mới'}
         </DialogTitle>
-        <DialogContent sx={{ pt: '24px !important' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+        <DialogContent>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
             <TextField
-              fullWidth size="small" label="Tên Danh Mục (*)"
-              value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} required
+              fullWidth
+              label="Tên Danh Mục"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              required
             />
             <TextField
-              fullWidth size="small" label="Mô Tả"
-              value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              multiline rows={3}
+              fullWidth
+              label="Mô Tả"
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              multiline
+              rows={3}
             />
-            <FormControl fullWidth size="small">
+            <FormControl fullWidth>
               <InputLabel>Danh Mục Cha</InputLabel>
               <Select
                 label="Danh Mục Cha"
@@ -264,25 +300,48 @@ export const CategoriesPage: React.FC = () => {
                 {topLevelCategories
                   .filter(cat => !editingCategory || cat.id !== editingCategory.id)
                   .map(cat => (
-                    <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
+                    <MenuItem key={cat.id} value={cat.id}>
+                      {cat.name}
+                    </MenuItem>
                   ))}
               </Select>
             </FormControl>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography variant="body2" fontWeight={600}>Trạng thái:</Typography>
+              <Typography>Trạng thái:</Typography>
               <Chip
-                label={formData.isActive ? 'Đang hoạt động' : 'Ngừng hoạt động'}
+                label={formData.isActive ? 'Hoạt động' : 'Ngừng'}
                 color={formData.isActive ? 'success' : 'default'}
                 onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
-                sx={{ cursor: 'pointer', fontWeight: 600 }}
+                sx={{ cursor: 'pointer' }}
               />
             </Box>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Button onClick={handleCloseDialog} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy</Button>
-          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
-            {editingCategory ? 'Lưu Cập Nhật' : 'Lưu Danh Mục'}
+        <DialogActions sx={{ p: 2 }}>
+          <Button
+            onClick={handleCloseDialog}
+            sx={{
+              '&:hover': {
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            Hủy
+          </Button>
+          <Button
+            variant="contained"
+            onClick={handleSave}
+            sx={{
+              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
+              '&:hover': {
+                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
+                transform: 'translateY(-2px)',
+              },
+            }}
+          >
+            {editingCategory ? 'Cập Nhật' : 'Tạo Mới'}
           </Button>
         </DialogActions>
       </Dialog>

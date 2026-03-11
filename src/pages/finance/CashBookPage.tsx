@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, TextField, MenuItem,
-  FormControl, InputLabel, Select, Button, Grid, Pagination, Checkbox
+  FormControl, InputLabel, Select, Button, Grid, Pagination, Checkbox,
+  Dialog, DialogTitle, DialogContent, DialogActions, CircularProgress
 } from '@mui/material';
 import {
   AccountBalanceWallet as WalletIcon,
@@ -15,33 +16,93 @@ import {
   Visibility as ViewIcon
 } from '@mui/icons-material';
 
-// Dữ liệu mẫu (Sau này bạn gọi API thay thế)
-const mockTransactions = [
-  { no: 1, id: 'PT001', date: '2026-03-05 08:30:00', type: 'INCOME', category: 'Bán hàng', description: 'Thu tiền mặt đơn hàng #1001', amountIn: 1500000, amountOut: 0, balance: 1500000, creator: 'Nguyễn Văn A' },
-  { no: 2, id: 'PC001', date: '2026-03-05 09:15:00', type: 'EXPENSE', category: 'Chi phí vận hành', description: 'Chi trả tiền nước đóng chai', amountIn: 0, amountOut: 50000, balance: 1450000, creator: 'Trần Thị B' },
-  { no: 3, id: 'PT002', date: '2026-03-05 10:00:00', type: 'INCOME', category: 'Bán hàng', description: 'Thu tiền mặt đơn hàng #1002', amountIn: 450000, amountOut: 0, balance: 1900000, creator: 'Nguyễn Văn A' },
-  { no: 4, id: 'PC002', date: '2026-03-05 14:20:00', type: 'EXPENSE', category: 'Nhập hàng', description: 'Chi trả tiền nhập trái cây NPP X', amountIn: 0, amountOut: 1000000, balance: 900000, creator: 'Nguyễn Văn A' },
-];
+import { useToastStore } from '../../store/toastStore';
+import { cashbookAPI, BackendCashbookTransaction } from '../../api/client';
+import dayjs from 'dayjs';
 
 export const CashBookPage: React.FC = () => {
+  const [transactions, setTransactions] = useState<BackendCashbookTransaction[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [typeFilter, setTypeFilter] = useState('ALL');
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
-  };
-
-  // Lọc dữ liệu
-  const filteredTransactions = mockTransactions.filter(t => {
-    const matchSearch = t.id.includes(searchQuery) || t.description.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchType = typeFilter === 'ALL' || t.type === typeFilter;
-    return matchSearch && matchType;
+  // States cho Dialog Tạo Phiếu
+  const [openDialog, setOpenDialog] = useState(false);
+  const [formData, setFormData] = useState({
+    type: 'INCOME',
+    category: '',
+    referenceName: '',
+    amount: '',
+    description: ''
   });
 
-  // Tính toán tóm tắt
-  const totalIncome = mockTransactions.reduce((sum, t) => sum + t.amountIn, 0);
-  const totalExpense = mockTransactions.reduce((sum, t) => sum + t.amountOut, 0);
-  const currentBalance = totalIncome - totalExpense; // Giả sử tồn đầu kỳ = 0
+  const { showToast } = useToastStore();
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
+  };
+
+  // --- API CALLS ---
+  const fetchCashTransactions = async () => {
+    setLoading(true);
+    try {
+      // Chỉ lấy giao dịch Tiền mặt (CASH)
+      const res = await cashbookAPI.getAll('CASH', typeFilter, searchQuery);
+      if (res.success) {
+        setTransactions(res.data);
+      }
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tải dữ liệu sổ quỹ', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCashTransactions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typeFilter]);
+
+  const handleSearchSubmit = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      fetchCashTransactions();
+    }
+  };
+
+  const handleSaveTransaction = async () => {
+    if (!formData.category || !formData.referenceName || !formData.amount) {
+      return showToast('Vui lòng điền đủ thông tin bắt buộc (*)', 'warning');
+    }
+
+    try {
+      setLoading(true);
+      await cashbookAPI.create({
+        type: formData.type as 'INCOME' | 'EXPENSE',
+        method: 'CASH', // Fix cứng phương thức Tiền mặt
+        category: formData.category,
+        referenceName: formData.referenceName,
+        description: formData.description,
+        amount: Number(formData.amount),
+        storeId: 1, // Tạm fix cứng, sau lấy từ Auth
+        creatorId: 1 // Tạm fix cứng, sau lấy từ Auth
+      });
+      
+      showToast(formData.type === 'INCOME' ? 'Tạo Phiếu Thu thành công!' : 'Tạo Phiếu Chi thành công!', 'success');
+      setOpenDialog(false);
+      setFormData({ type: 'INCOME', category: '', referenceName: '', amount: '', description: '' });
+      fetchCashTransactions(); // Tải lại bảng dữ liệu mới nhất
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi tạo phiếu', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- TÍNH TOÁN TÓM TẮT ---
+  const totalIncome = transactions.filter(t => t.type === 'INCOME').reduce((sum, t) => sum + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'EXPENSE').reduce((sum, t) => sum + t.amount, 0);
+  // Số dư tồn quỹ hiện tại (Lấy từ giao dịch mới nhất ở đầu mảng)
+  const currentBalance = transactions.length > 0 ? transactions[0].balanceAfterTransaction : 0;
 
   return (
     <Box className="fade-in">
@@ -88,15 +149,17 @@ export const CashBookPage: React.FC = () => {
         </Grid>
       </Grid>
 
-      {/* FILTER & BẢNG - CHUẨN RIC */}
+      {/* FILTER & BẢNG */}
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           
           {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
-              size="small" placeholder="Tìm: Mã phiếu/Diễn giải..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+              size="small" placeholder="Tìm: Mã phiếu/Diễn giải... (Enter)" 
+              value={searchQuery} 
+              onChange={(e) => setSearchQuery(e.target.value)}
+              onKeyDown={handleSearchSubmit}
               sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
@@ -108,15 +171,10 @@ export const CashBookPage: React.FC = () => {
               </Select>
             </FormControl>
 
-            <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Lập Phiếu Thu/Chi</Button>
+            <Button onClick={() => setOpenDialog(true)} size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Lập Phiếu Thu/Chi</Button>
             <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Sổ Quỹ</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
           </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
           <TableContainer>
             <Table sx={{ minWidth: 1000 }}>
               <TableHead sx={{ bgcolor: '#ffffff' }}>
@@ -135,9 +193,16 @@ export const CashBookPage: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredTransactions.map((row) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
+                {transactions.length === 0 && !loading && (
+                  <TableRow><TableCell colSpan={11} align="center" sx={{ py: 3 }}>Không có dữ liệu sổ quỹ</TableCell></TableRow>
+                )}
+                {loading && transactions.length === 0 && (
+                  <TableRow><TableCell colSpan={11} align="center" sx={{ py: 3 }}><CircularProgress size={24} /></TableCell></TableRow>
+                )}
+                
+                {transactions.map((row, index) => (
+                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 }, bgcolor: row.status === 'CANCELLED' ? '#f871711a' : 'inherit' }}>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
                       <Box sx={{ display: 'flex', justifyContent: 'center' }}>
@@ -145,8 +210,10 @@ export const CashBookPage: React.FC = () => {
                       </Box>
                     </TableCell>
 
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.date}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0284c7', p: 1.5 }}>{row.id}</TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
+                      {dayjs(row.transactionDate).format('DD/MM/YYYY HH:mm')}
+                    </TableCell>
+                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0284c7', p: 1.5 }}>{row.code}</TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
                       {row.type === 'INCOME' ? 
@@ -156,21 +223,22 @@ export const CashBookPage: React.FC = () => {
                     </TableCell>
 
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>{row.category}</Typography>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>{row.category} - {row.referenceName}</Typography>
                       <Typography variant="caption" color="text.secondary">{row.description}</Typography>
+                      {row.status === 'CANCELLED' && <Typography variant="caption" color="error" sx={{display: 'block', fontWeight: 'bold'}}>* Đã hủy</Typography>}
                     </TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#16a34a', p: 1.5 }}>
-                      {row.amountIn > 0 ? `+${formatCurrency(row.amountIn)}` : ''}
+                      {row.type === 'INCOME' ? `+${formatCurrency(row.amount)}` : ''}
                     </TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#dc2626', p: 1.5 }}>
-                      {row.amountOut > 0 ? `-${formatCurrency(row.amountOut)}` : ''}
+                      {row.type === 'EXPENSE' ? `-${formatCurrency(row.amount)}` : ''}
                     </TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#1e40af', p: 1.5 }}>
-                      {formatCurrency(row.balance)}
+                      {formatCurrency(row.balanceAfterTransaction)}
                     </TableCell>
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>
-                      {row.creator}
+                      {row.creatorName}
                     </TableCell>
                   </TableRow>
                 ))}
@@ -180,10 +248,37 @@ export const CashBookPage: React.FC = () => {
 
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {filteredTransactions.length} of {filteredTransactions.length} items</Typography>
+             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Hiển thị {transactions.length} giao dịch</Typography>
           </Box>
         </CardContent>
       </Card>
+
+      {/* ================= DIALOG LẬP PHIẾU THU/CHI ================= */}
+      <Dialog open={openDialog} onClose={() => !loading && setOpenDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
+        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>LẬP PHIẾU THU / CHI TIỀN MẶT</DialogTitle>
+        <DialogContent sx={{ pt: '24px !important' }}>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+            <FormControl fullWidth size="small">
+              <InputLabel>Loại Phiếu (*)</InputLabel>
+              <Select value={formData.type} label="Loại Phiếu (*)" onChange={(e) => setFormData({...formData, type: e.target.value})}>
+                <MenuItem value="INCOME">Phiếu Thu (Nhận tiền)</MenuItem>
+                <MenuItem value="EXPENSE">Phiếu Chi (Trách tiền)</MenuItem>
+              </Select>
+            </FormControl>
+
+            <TextField size="small" label="Người nộp / Người nhận (*)" fullWidth value={formData.referenceName} onChange={(e) => setFormData({...formData, referenceName: e.target.value})} required />
+            <TextField size="small" label="Số tiền (VNĐ) (*)" type="number" fullWidth value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} required />
+            <TextField size="small" label="Nhóm phân loại (*)" placeholder="VD: Bán hàng, Trả nợ NCC..." fullWidth value={formData.category} onChange={(e) => setFormData({...formData, category: e.target.value})} required />
+            <TextField size="small" label="Lý do / Diễn giải chi tiết" fullWidth multiline rows={3} value={formData.description} onChange={(e) => setFormData({...formData, description: e.target.value})} />
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
+          <Button disabled={loading} onClick={() => setOpenDialog(false)} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy Bỏ</Button>
+          <Button disabled={loading} variant="contained" onClick={handleSaveTransaction} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'Lưu Phiếu'}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
