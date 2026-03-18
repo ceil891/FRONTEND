@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Grid, Card, CardContent, TextField, Button, Typography, Box, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, IconButton, Chip, InputAdornment,
@@ -10,9 +10,18 @@ import {
 } from '@mui/icons-material';
 import { Product, OrderDetail, PaymentMethod, Promotion } from '../../types';
 import { useToastStore } from '../../store/toastStore';
-import { productAPI, orderAPI, storeAPI, BackendStore } from '../../api/client';
+
 import { generateReceiptHTML } from '../../utils/receiptTemplate';
 import { useAuthStore } from '../../store/authStore';
+// Đảm bảo import đúng các API từ file client.ts của bạn
+import { storeAPI, productAPI, orderAPI } from '../../api/client'; 
+
+// Cập nhật Type cho BackendStore nếu chưa có
+interface BackendStore {
+  id: number;
+  name: string;
+  address?: string;
+}
 
 export const POSPage: React.FC = () => {
   // --- STATE QUẢN LÝ CỬA HÀNG ---
@@ -26,7 +35,7 @@ export const POSPage: React.FC = () => {
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromotion, setAppliedPromotion] = useState<Promotion | null>(null);
   
-  // ✅ THÊM STATE ĐỂ ĐÓNG/MỞ POPUP QR
+  // STATE ĐÓNG/MỞ POPUP QR
   const [openQRDialog, setOpenQRDialog] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
@@ -36,13 +45,13 @@ export const POSPage: React.FC = () => {
 
   const mapBackendToProduct = (sp: any): Product => {
     return {
-      id: String(sp.sanPhamId),
-      code: sp.maSku,
-      name: sp.tenSanPham,
-      price: Number(sp.giaBan ?? 0),
+      id: String(sp.sanPhamId || sp.id),
+      code: sp.maSku || sp.code,
+      name: sp.tenSanPham || sp.name,
+      price: Number(sp.giaBan ?? sp.price ?? 0),
       unit: 'Cái', 
       categoryId: sp.danhMuc ? sp.danhMuc.id : null,
-      isActive: !!sp.hoatDong,
+      isActive: sp.hoatDong !== false && sp.isActive !== false,
       createdAt: new Date(),
       updatedAt: new Date(),
       ...({ 
@@ -87,12 +96,52 @@ export const POSPage: React.FC = () => {
     { id: '1', code: 'GIAM10', name: 'Giảm 10%', discountType: 'PERCENTAGE', discountValue: 10, minPurchase: 100000, maxDiscount: 50000, startDate: new Date(), endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isActive: true, createdAt: new Date(), updatedAt: new Date() },
   ];
 
+  // ==========================================
+  // TỐI ƯU HIỆU NĂNG VỚI useMemo
+  // ==========================================
+  
+  // 1. Chỉ lọc lại sản phẩm khi products hoặc searchQuery thay đổi
+  const filteredProducts = useMemo(() => {
+    if (!searchQuery.trim()) return products;
+    const lowerQuery = searchQuery.toLowerCase();
+    return products.filter(p =>
+      p.name.toLowerCase().includes(lowerQuery) || 
+      p.code.toLowerCase().includes(lowerQuery)
+    );
+  }, [products, searchQuery]);
+
+  // 2. Chỉ tính lại tiền khi giỏ hàng hoặc khuyến mãi thay đổi
+  const { subtotal, discount, total } = useMemo(() => {
+    const calcSubtotal = cart.reduce((sum, item) => sum + item.total, 0);
+    let calcDiscount = 0;
+    
+    if (appliedPromotion) {
+      if (appliedPromotion.discountType === 'PERCENTAGE') {
+        calcDiscount = (calcSubtotal * appliedPromotion.discountValue) / 100;
+        if (appliedPromotion.maxDiscount && calcDiscount > appliedPromotion.maxDiscount) {
+          calcDiscount = appliedPromotion.maxDiscount;
+        }
+      } else {
+        calcDiscount = appliedPromotion.discountValue;
+      }
+    }
+    
+    return {
+      subtotal: calcSubtotal,
+      discount: calcDiscount,
+      total: Math.max(0, calcSubtotal - calcDiscount) // Đảm bảo total không bị âm
+    };
+  }, [cart, appliedPromotion]);
+
+  // ==========================================
+  // LOGIC GIỎ HÀNG & KHUYẾN MÃI
+  // ==========================================
+
   const applyPromotion = () => {
     if (!promoCode.trim()) return showToast('Vui lòng nhập mã', 'warning');
     const promotion = mockPromotions.find(p => p.code.toUpperCase() === promoCode.toUpperCase() && p.isActive);
     if (!promotion) return showToast('Mã không hợp lệ', 'error');
     
-    const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
     if (promotion.minPurchase && subtotal < promotion.minPurchase) {
       return showToast(`Đơn hàng tối thiểu ${formatCurrency(promotion.minPurchase)}`, 'warning');
     }
@@ -125,19 +174,10 @@ export const POSPage: React.FC = () => {
 
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.id !== id));
 
-  const subtotal = cart.reduce((sum, item) => sum + item.total, 0);
-  let discount = 0;
-  if (appliedPromotion) {
-    if (appliedPromotion.discountType === 'PERCENTAGE') {
-      discount = (subtotal * appliedPromotion.discountValue) / 100;
-      if (appliedPromotion.maxDiscount && discount > appliedPromotion.maxDiscount) discount = appliedPromotion.maxDiscount;
-    } else {
-      discount = appliedPromotion.discountValue;
-    }
-  }
-  const total = subtotal - discount;
+  // ==========================================
+  // LOGIC THANH TOÁN & LƯU DB
+  // ==========================================
 
-  // ✅ HÀM GỌI API ĐỂ LƯU VÀO DATABASE VÀ GOOGLE SHEETS
   const submitOrderToDatabase = async () => {
     if (!selectedStore) return showToast('Chưa chọn cửa hàng', 'error');
     if (!user || !user.id) return showToast('Lỗi: Chưa đăng nhập', 'error');
@@ -163,11 +203,11 @@ export const POSPage: React.FC = () => {
         }))
       };
 
-      // 1. Lưu vào Database MySQL (Java Spring Boot)
+      // 1. Lưu vào Database MySQL
       await orderAPI.create(orderPayload as any); 
 
-      // 2. Bắn dữ liệu lên Google Sheets (Chạy ngầm không đợi chờ)
-   try {
+      // 2. Bắn dữ liệu lên Google Sheets
+      try {
         const formData = new URLSearchParams();
         formData.append('thoiGian', new Date().toLocaleString('vi-VN'));
         formData.append('cuaHang', selectedStore.name || 'Cửa hàng');
@@ -176,12 +216,11 @@ export const POSPage: React.FC = () => {
         formData.append('hinhThuc', paymentMethod === PaymentMethod.QR_CODE ? 'Chuyển khoản' : 'Tiền mặt');
         formData.append('sanPham', cart.map(item => `${item.productName} (x${item.quantity})`).join(', '));
 
-       await fetch('https://script.google.com/macros/s/AKfycbzl5yAluSPScYslJtEbmoFP8X5v30M1ocxtQE_yq6K9k3utG7XsaVafssSFWo4kUPBElg/exec', { 
+        await fetch('https://script.google.com/macros/s/AKfycbzl5yAluSPScYslJtEbmoFP8X5v30M1ocxtQE_yq6K9k3utG7XsaVafssSFWo4kUPBElg/exec', { 
           method: 'POST',
           body: formData,
-          mode: 'no-cors' // Cực kỳ quan trọng
+          mode: 'no-cors' 
         });
-        
         console.log("Đã gửi lệnh lưu lên Google Sheets!");
       } catch (sheetErr) {
         console.error("Lỗi khi bắn dữ liệu lên Sheets:", sheetErr);
@@ -191,7 +230,7 @@ export const POSPage: React.FC = () => {
       setCart([]); 
       setAppliedPromotion(null);
       setPromoCode('');
-      setOpenQRDialog(false); // Thành công thì đóng popup mã QR
+      setOpenQRDialog(false); 
     } catch (err: any) {
       showToast('Lỗi khi thanh toán: ' + (err.response?.data?.message || err.message), 'error');
     } finally {
@@ -199,14 +238,13 @@ export const POSPage: React.FC = () => {
     }
   };
 
-  // ✅ HÀM XỬ LÝ KHI BẤM NÚT "THANH TOÁN" MÀU XANH BÊN CỘT PHẢI
   const handleCheckoutClick = () => {
     if (cart.length === 0) return showToast('Giỏ hàng trống', 'warning');
     
     if (paymentMethod === PaymentMethod.QR_CODE) {
-      setOpenQRDialog(true); // Bật popup mã QR lên
+      setOpenQRDialog(true); 
     } else {
-      submitOrderToDatabase(); // Trả tiền mặt thì lưu vào DB luôn
+      submitOrderToDatabase(); 
     }
   };
 
@@ -228,10 +266,6 @@ export const POSPage: React.FC = () => {
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
   };
-
-  const filteredProducts = products.filter(p =>
-    p.name.toLowerCase().includes(searchQuery.toLowerCase()) || p.code.toLowerCase().includes(searchQuery.toLowerCase())
-  );
 
   // ==========================================
   // GIAO DIỆN 1: MÀN HÌNH CHỌN CỬA HÀNG
@@ -428,7 +462,7 @@ export const POSPage: React.FC = () => {
                         sx={{ 
                           '& .MuiOutlinedInput-root': { 
                             borderRadius: 1.5, 
-                            height: '42px' // Ép chiều cao cố định
+                            height: '42px' 
                           } 
                         }} 
                       />
@@ -438,8 +472,8 @@ export const POSPage: React.FC = () => {
                         sx={{ 
                           borderRadius: 1.5, 
                           fontWeight: 600, 
-                          height: '42px', // Chiều cao bằng chính xác ô text
-                          minWidth: '100px' // Nút không bị ép rúm ró
+                          height: '42px', 
+                          minWidth: '100px' 
                         }}
                       >
                         Áp dụng
@@ -476,7 +510,6 @@ export const POSPage: React.FC = () => {
                   <Chip label="Chuyển khoản" onClick={() => setPaymentMethod(PaymentMethod.QR_CODE)} color={paymentMethod === PaymentMethod.QR_CODE ? 'primary' : 'default'} variant={paymentMethod === PaymentMethod.QR_CODE ? 'filled' : 'outlined'} sx={{ flex: 1, fontWeight: 600, borderRadius: 1.5, py: 2.5 }} />
                 </Box>
 
-                {/* ✅ GỌI HÀM KIỂM TRA MỞ POPUP HAY LƯU LUÔN */}
                 <Button fullWidth variant="contained" size="large" startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <PaymentIcon />} disabled={loading} onClick={handleCheckoutClick} sx={{ mb: 1, py: 1.5, fontSize: '1rem', fontWeight: 700, borderRadius: 2, boxShadow: '0 4px 12px rgba(25, 118, 210, 0.25)', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(25, 118, 210, 0.35)' } }}>
                   {loading ? 'ĐANG XỬ LÝ...' : 'THANH TOÁN'}
                 </Button>
@@ -491,7 +524,6 @@ export const POSPage: React.FC = () => {
       </Grid>
 
       {/* ================= DIALOG MÃ QR CHUYỂN KHOẢN ================= */}
-      {/* Nằm ngoài cùng để popup trôi nổi lên trên cùng */}
       <Dialog open={openQRDialog} onClose={() => !loading && setOpenQRDialog(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', color: 'primary.main', pb: 1 }}>
           Thanh Toán Chuyển Khoản
@@ -502,7 +534,6 @@ export const POSPage: React.FC = () => {
             Số tiền: <strong style={{ color: '#dc2626', fontSize: '1.2rem' }}>{formatCurrency(total)}</strong>
           </Typography>
           
-          {/* 💡 Sửa STK và Bank ID của bạn ở đây nhé */}
           <Box 
             component="img"
             src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=ThanhToanPOS&accountName=NGUYEN%20LUU%20HUNG`}
@@ -514,7 +545,6 @@ export const POSPage: React.FC = () => {
           <Button variant="outlined" color="error" onClick={() => setOpenQRDialog(false)} disabled={loading}>
             Hủy Giao Dịch
           </Button>
-          {/* 💡 Khi bấm Xác nhận, gọi thẳng hàm lưu Database */}
           <Button variant="contained" color="success" onClick={submitOrderToDatabase} disabled={loading}>
             {loading ? 'Đang lưu...' : 'Đã Nhận Tiền'}
           </Button>

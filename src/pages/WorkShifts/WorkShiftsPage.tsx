@@ -1,417 +1,202 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Chip,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  IconButton,
+  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Button, IconButton, TextField,
+  Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
+  FormControl, InputLabel, Select, Chip, CircularProgress, Tooltip
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  AccessTime as TimeIcon,
+  Add as AddIcon, AccessTime as TimeIcon,
+  ExitToApp as LogoutIcon, History as HistoryIcon
 } from '@mui/icons-material';
-import { WorkShift } from '../../types';
 import { useToastStore } from '../../store/toastStore';
-import { useAuthStore } from '../../store/authStore';
 import { format } from 'date-fns';
-import { workShiftAPI, storeAPI, userAPI, BackendWorkShift, BackendStore, BackendUser } from '../../api/client';
+import { workShiftAPI, storeAPI, userAPI } from '../../api/client';
 
 export const WorkShiftsPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
-  const [editingShift, setEditingShift] = useState<WorkShift | null>(null);
   const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const { showToast } = useToastStore();
-  const { isSuperAdmin } = useAuthStore();
 
-  const [shifts, setShifts] = useState<WorkShift[]>([]);
-  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
-  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [shifts, setShifts] = useState<any[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
 
   const [formData, setFormData] = useState({
     storeId: '',
-    userId: '',
+    employeeId: '',
     shiftDate: format(new Date(), 'yyyy-MM-dd'),
-    startTime: '08:00',
-    endTime: '',
+    startTime: format(new Date(), 'HH:mm'),
     notes: '',
   });
 
-  useEffect(() => {
-    void loadInitialData();
-  }, []);
-
-  const loadInitialData = async () => {
+  const loadData = async () => {
     try {
       setLoading(true);
-      await Promise.all([loadShifts(), loadStores(), loadUsers()]);
+      const [shiftRes, storeRes, userRes] = await Promise.all([
+        workShiftAPI.getAll(),
+        storeAPI.getAll(),
+        userAPI.getAll()
+      ]);
+
+      // Lấy data từ ApiResponse.java
+      setShifts((shiftRes.data as any)?.data || shiftRes.data || []);
+      setStores((storeRes.data as any)?.data || storeRes.data || []);
+      setUsers((userRes.data as any)?.data || userRes.data || []);
+    } catch (err: any) {
+      showToast('Lỗi khi tải dữ liệu hệ thống', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const loadShifts = async () => {
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const handleCheckIn = async () => {
+    if (!formData.storeId || !formData.employeeId) {
+      return showToast('Vui lòng chọn cửa hàng và nhân viên', 'warning');
+    }
+
     try {
-      const resp = await workShiftAPI.getAll();
-      if (resp.data.success && resp.data.data) {
-        const mapped: WorkShift[] = resp.data.data.map((ws: BackendWorkShift) => ({
-          id: ws.id.toString(),
-          storeId: ws.storeId.toString(),
-          userId: ws.userId.toString(),
-          shiftDate: new Date(ws.shiftDate),
-          startTime: new Date(`${ws.shiftDate}T${ws.startTime}`),
-          endTime: ws.endTime ? new Date(`${ws.shiftDate}T${ws.endTime}`) : undefined,
-          notes: ws.notes || undefined,
-          createdAt: new Date(ws.createdAt),
-        }));
-        setShifts(mapped);
-      }
+      setSaving(true);
+      const payload = {
+        storeId: Number(formData.storeId),
+        employeeId: Number(formData.employeeId), 
+        shiftDate: formData.shiftDate,
+        startTime: formData.startTime,
+        notes: formData.notes
+      };
+
+      await workShiftAPI.checkIn(payload);
+      showToast('Check-in thành công!', 'success');
+      setOpenDialog(false);
+      loadData();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Lỗi Check-in', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCheckOut = async (id: number) => {
+    if (!window.confirm("Bạn có chắc muốn kết thúc ca làm việc này?")) return;
+    try {
+      await workShiftAPI.checkOut(id);
+      showToast('Check-out thành công!', 'success');
+      loadData();
     } catch (err: any) {
-      showToast(err?.message || 'Lỗi khi tải ca làm việc', 'error');
+      showToast('Lỗi Check-out', 'error');
     }
   };
-
-  const loadStores = async () => {
-    try {
-      const resp = await storeAPI.getAll();
-      if (resp.data.success && resp.data.data) {
-        setStores(
-          resp.data.data.map((s: BackendStore) => ({
-            id: s.id.toString(),
-            name: s.name,
-          }))
-        );
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const loadUsers = async () => {
-    try {
-      const resp = await userAPI.getAll();
-      if (resp.data.success && resp.data.data) {
-        setUsers(
-          resp.data.data.map((u: BackendUser) => ({
-            id: u.id.toString(),
-            name: u.fullName,
-          }))
-        );
-      }
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleOpenDialog = (shift?: WorkShift) => {
-    if (shift) {
-      setEditingShift(shift);
-      setFormData({
-        storeId: shift.storeId,
-        userId: shift.userId,
-        shiftDate: format(shift.shiftDate, 'yyyy-MM-dd'),
-        startTime: format(shift.startTime, 'HH:mm'),
-        endTime: shift.endTime ? format(shift.endTime, 'HH:mm') : '',
-        notes: shift.notes || '',
-      });
-    } else {
-      setEditingShift(null);
-      setFormData({
-        storeId: '',
-        userId: '',
-        shiftDate: format(new Date(), 'yyyy-MM-dd'),
-        startTime: '08:00',
-        endTime: '',
-        notes: '',
-      });
-    }
-    setOpenDialog(true);
-  };
-
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setEditingShift(null);
-  };
-
-  const handleSave = async () => {
-    // Validation
-    if (!formData.storeId || !formData.userId) {
-      showToast('Vui lòng chọn cửa hàng và nhân viên', 'warning');
-      return;
-    }
-    if (!formData.shiftDate) {
-      showToast('Vui lòng chọn ngày làm việc', 'warning');
-      return;
-    }
-    if (!formData.startTime) {
-      showToast('Vui lòng chọn giờ bắt đầu', 'warning');
-      return;
-    }
-    if (formData.endTime && formData.endTime <= formData.startTime) {
-      showToast('Giờ kết thúc phải sau giờ bắt đầu', 'warning');
-      return;
-    }
-
-    const [startHour, startMinute] = formData.startTime.split(':').map(Number);
-    const startTime = new Date(formData.shiftDate);
-    startTime.setHours(startHour, startMinute, 0, 0);
-
-    let endTime: Date | undefined;
-    if (formData.endTime) {
-      const [endHour, endMinute] = formData.endTime.split(':').map(Number);
-      endTime = new Date(formData.shiftDate);
-      endTime.setHours(endHour, endMinute, 0, 0);
-    }
-
-    try {
-      if (editingShift) {
-        const resp = await workShiftAPI.update(parseInt(editingShift.id, 10), {
-          storeId: parseInt(formData.storeId, 10),
-          userId: parseInt(formData.userId, 10),
-          shiftDate: formData.shiftDate,
-          startTime: formData.startTime,
-          endTime: formData.endTime || undefined,
-          notes: formData.notes || undefined,
-        });
-        if (resp.data.success) {
-          showToast('Cập nhật ca làm việc thành công', 'success');
-          await loadShifts();
-        }
-      } else {
-        const resp = await workShiftAPI.create({
-          storeId: parseInt(formData.storeId, 10),
-          userId: parseInt(formData.userId, 10),
-          shiftDate: formData.shiftDate,
-          startTime: formData.startTime,
-          endTime: formData.endTime || undefined,
-          notes: formData.notes || undefined,
-        });
-        if (resp.data.success) {
-          showToast('Thêm ca làm việc thành công', 'success');
-          await loadShifts();
-        }
-      }
-      handleCloseDialog();
-    } catch (err: any) {
-      showToast(err?.message || 'Lỗi khi lưu ca làm việc', 'error');
-    }
-  };
-
-  const getUserName = (userId: string) => {
-    return users.find(u => u.id === userId)?.name || 'N/A';
-  };
-
-  const getStoreName = (storeId: string) => {
-    return stores.find(s => s.id === storeId)?.name || 'N/A';
-  };
-
-  const isActive = (shift: WorkShift) => {
-    return !shift.endTime;
-  };
-
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <Typography>Đang tải ca làm việc...</Typography>
-      </Box>
-    );
-  }
 
   return (
-    <Box>
+    <Box className="fade-in">
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <TimeIcon color="primary" />
-          Quản Lý Ca Làm Việc
+          <TimeIcon color="primary" /> QUẢN LÝ CA LÀM VIỆC
         </Typography>
-        {isSuperAdmin() && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-              },
-            }}
-          >
-            Thêm Ca Làm Việc
-          </Button>
-        )}
+        <Button 
+          variant="contained" 
+          startIcon={<AddIcon />} 
+          onClick={() => setOpenDialog(true)} 
+          sx={{ bgcolor: '#00a65a', textTransform: 'none' }}
+        >
+          Mở Ca Check-in
+        </Button>
       </Box>
 
-      <Card>
-        <CardContent>
-          <TableContainer>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell>Nhân Viên</TableCell>
-                  <TableCell>Cửa Hàng</TableCell>
-                  <TableCell>Ngày</TableCell>
-                  <TableCell>Giờ Bắt Đầu</TableCell>
-                  <TableCell>Giờ Kết Thúc</TableCell>
-                  <TableCell>Trạng Thái</TableCell>
-                  <TableCell>Ghi Chú</TableCell>
-                  <TableCell align="right">Thao Tác</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {shifts.map((shift) => (
-                  <TableRow key={shift.id}>
-                    <TableCell>{getUserName(shift.userId)}</TableCell>
-                    <TableCell>{getStoreName(shift.storeId)}</TableCell>
-                    <TableCell>{format(shift.shiftDate, 'dd/MM/yyyy')}</TableCell>
-                    <TableCell>{format(shift.startTime, 'HH:mm')}</TableCell>
-                    <TableCell>
-                      {shift.endTime ? format(shift.endTime, 'HH:mm') : '-'}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={isActive(shift) ? 'Đang làm' : 'Đã kết thúc'}
-                        color={isActive(shift) ? 'success' : 'default'}
-                        size="small"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {shift.notes || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      {isSuperAdmin() && (
-                        <IconButton size="small" color="primary" onClick={() => handleOpenDialog(shift)}>
-                          <EditIcon fontSize="small" />
+      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
+        <TableContainer>
+          <Table>
+            <TableHead sx={{ bgcolor: '#f8fafc' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 600 }}>Nhân Viên</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Cửa Hàng</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Ngày</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Giờ Vào</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Giờ Ra</TableCell>
+                <TableCell sx={{ fontWeight: 600 }}>Trạng Thái</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 600 }}>Thao Tác</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}><CircularProgress size={24} /></TableCell></TableRow>
+              ) : shifts.length === 0 ? (
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>Chưa có ca làm việc nào</TableCell></TableRow>
+              ) : shifts.map((shift) => (
+                <TableRow key={shift.id} hover>
+                  {/* 👉 Dùng trực tiếp employeeName và storeName từ Backend trả về */}
+                  <TableCell sx={{ fontWeight: 600 }}>{shift.employeeName || 'N/A'}</TableCell>
+                  <TableCell>{shift.storeName || 'N/A'}</TableCell>
+                  
+                  <TableCell>{shift.shiftDate}</TableCell>
+                  <TableCell sx={{ color: '#00a65a', fontWeight: 600 }}>{shift.startTime}</TableCell>
+                  <TableCell sx={{ color: '#dd4b39', fontWeight: 600 }}>{shift.endTime || '--:--'}</TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={!shift.endTime ? 'Đang làm' : 'Đã kết thúc'} 
+                      color={!shift.endTime ? 'success' : 'default'} 
+                      size="small" 
+                    />
+                  </TableCell>
+                  <TableCell align="right">
+                    {!shift.endTime && (
+                      <Tooltip title="Kết thúc ca (Check-out)">
+                        <IconButton color="error" onClick={() => handleCheckOut(shift.id)}>
+                          <LogoutIcon fontSize="small" />
                         </IconButton>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-        </CardContent>
+                      </Tooltip>
+                    )}
+                    <IconButton size="small"><HistoryIcon fontSize="small" /></IconButton>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Card>
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingShift ? 'Chỉnh Sửa Ca Làm Việc' : 'Thêm Ca Làm Việc Mới'}
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <FormControl fullWidth required>
-              <InputLabel>Cửa Hàng</InputLabel>
-                <Select
-                label="Cửa Hàng"
-                value={formData.storeId}
-                onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
-              >
-                {stores.map(store => (
-                  <MenuItem key={store.id} value={store.id}>
-                    {store.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <FormControl fullWidth required>
-              <InputLabel>Nhân Viên</InputLabel>
-                <Select
-                label="Nhân Viên"
-                value={formData.userId}
-                onChange={(e) => setFormData({ ...formData, userId: e.target.value })}
-              >
-                {users.map(user => (
-                  <MenuItem key={user.id} value={user.id}>
-                    {user.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-            <TextField
-              fullWidth
-              label="Ngày"
-              type="date"
-              value={formData.shiftDate}
-              onChange={(e) => setFormData({ ...formData, shiftDate: e.target.value })}
-              InputLabelProps={{ shrink: true }}
-              required
-            />
-            <Box sx={{ display: 'flex', gap: 2 }}>
-              <TextField
-                fullWidth
-                label="Giờ Bắt Đầu"
-                type="time"
-                value={formData.startTime}
-                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-                required
-              />
-              <TextField
-                fullWidth
-                label="Giờ Kết Thúc"
-                type="time"
-                value={formData.endTime}
-                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
-                InputLabelProps={{ shrink: true }}
-              />
-            </Box>
-            <TextField
-              fullWidth
-              label="Ghi Chú"
-              value={formData.notes}
-              onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-              multiline
-              rows={2}
-            />
+      {/* DIALOG CHECK-IN */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>CHECK-IN NHÂN VIÊN</DialogTitle>
+        <DialogContent sx={{ pt: '20px !important', display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <FormControl fullWidth size="small">
+            <InputLabel>Cửa Hàng</InputLabel>
+            <Select 
+              label="Cửa Hàng" 
+              value={formData.storeId} 
+              onChange={(e) => setFormData({...formData, storeId: e.target.value})}
+            >
+              {stores.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
+            </Select>
+          </FormControl>
+
+          <FormControl fullWidth size="small">
+            <InputLabel>Nhân Viên</InputLabel>
+            <Select 
+              label="Nhân Viên" 
+              value={formData.employeeId} 
+              onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+            >
+              {users.map(u => <MenuItem key={u.id} value={u.id}>{u.fullName}</MenuItem>)}
+            </Select>
+          </FormControl>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+            <TextField label="Ngày" type="date" size="small" value={formData.shiftDate} onChange={(e) => setFormData({...formData, shiftDate: e.target.value})} InputLabelProps={{ shrink: true }} />
+            <TextField label="Giờ vào" type="time" size="small" value={formData.startTime} onChange={(e) => setFormData({...formData, startTime: e.target.value})} InputLabelProps={{ shrink: true }} />
           </Box>
+
+          <TextField label="Ghi chú" multiline rows={2} size="small" value={formData.notes} onChange={(e) => setFormData({...formData, notes: e.target.value})} />
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleCloseDialog}
-            sx={{
-              '&:hover': {
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            Hủy
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            {editingShift ? 'Cập Nhật' : 'Tạo Mới'}
+          <Button onClick={() => setOpenDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleCheckIn} disabled={saving} sx={{ bgcolor: '#00a65a' }}>
+            {saving ? 'Đang lưu...' : 'Xác Nhận Check-in'}
           </Button>
         </DialogActions>
       </Dialog>

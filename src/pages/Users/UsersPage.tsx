@@ -1,87 +1,48 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Table,
-  TableBody,
-  TableCell,
-  TableContainer,
-  TableHead,
-  TableRow,
-  Paper,
-  Button,
-  IconButton,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Chip,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  Avatar,
-  CircularProgress,
+  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Button, IconButton, Dialog,
+  DialogTitle, DialogContent, DialogActions, TextField, Chip, MenuItem,
+  FormControl, InputLabel, Select, Avatar, CircularProgress, Pagination
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Lock as LockIcon,
-  LockOpen as LockOpenIcon,
+  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
+  Lock as LockIcon, LockOpen as LockOpenIcon,
 } from '@mui/icons-material';
-import { User, UserRole } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
-import { userAPI, storeAPI, BackendUser, BackendStore } from '../../api/client';
+
+// IMPORT API THỰC TẾ
+import { userAPI, storeAPI } from '../../api/client';
 
 export const UsersPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
-  const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [editingUser, setEditingUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
-  const [stores, setStores] = useState<{ id: string; name: string }[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
+  const [users, setUsers] = useState<any[]>([]);
+  
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
   const [formData, setFormData] = useState({
-    fullName: '',
-    email: '',
-    password: '',
-    phone: '',
-    role: UserRole.STAFF,
-    storeId: '',
+    fullName: '', email: '', password: '', phone: '',
+    role: 'STAFF', storeId: '',
   });
-
-  const [formErrors, setFormErrors] = useState<Record<string, string>>({});
-  const [users, setUsers] = useState<User[]>([]);
 
   useEffect(() => {
     loadUsers();
     loadStores();
   }, []);
 
+  // 1. Tải danh sách người dùng (Xử lý bao lô data)
   const loadUsers = async () => {
     try {
       setLoading(true);
       const response = await userAPI.getAll();
-      if (response.data.success) {
-        const backendUsers = response.data.data || [];
-        const mappedUsers: User[] = backendUsers.map((user: BackendUser) => ({
-          id: user.id.toString(),
-          email: user.email,
-          fullName: user.fullName,
-          phone: user.phone,
-          role: user.role as UserRole,
-          storeId: user.storeId?.toString(),
-          isActive: user.isActive,
-          createdAt: new Date(user.createdAt),
-          updatedAt: new Date(user.updatedAt),
-        }));
-        setUsers(mappedUsers);
-      }
+      const responseData = response.data as any;
+      const items = Array.isArray(responseData) ? responseData : (responseData?.data || []);
+      setUsers(items);
     } catch (error: any) {
       showToast(error.message || 'Lỗi khi tải danh sách người dùng', 'error');
     } finally {
@@ -89,279 +50,133 @@ export const UsersPage: React.FC = () => {
     }
   };
 
+  // 2. Tải danh sách cửa hàng cho menu Select
   const loadStores = async () => {
     try {
       const response = await storeAPI.getAll();
-      if (response.data.success) {
-        const backendStores = response.data.data || [];
-        const mappedStores = backendStores.map((store: BackendStore) => ({
-          id: store.id.toString(),
-          name: store.name,
-        }));
-        setStores(mappedStores);
-      }
-    } catch (error: any) {
-      // Ignore error for stores
-    }
+      const responseData = response.data as any;
+      setStores(Array.isArray(responseData) ? responseData : (responseData?.data || []));
+    } catch (error) {}
   };
 
-  const getRoleLabel = (role: UserRole) => {
-    switch (role) {
-      case UserRole.SUPER_ADMIN:
-        return 'Siêu Quản Trị';
-      case UserRole.ADMIN:
-        return 'Quản Trị';
-      case UserRole.MANAGER:
-        return 'Quản Lý';
-      case UserRole.STAFF:
-        return 'Nhân Viên';
-      default:
-        return role;
-    }
-  };
-
-  const getRoleColor = (role: UserRole) => {
-    switch (role) {
-      case UserRole.SUPER_ADMIN:
-        return 'error';
-      case UserRole.ADMIN:
-        return 'error';
-      case UserRole.MANAGER:
-        return 'warning';
-      case UserRole.STAFF:
-        return 'info';
-      default:
-        return 'default';
-    }
-  };
-
-  const handleOpenDialog = (user?: User) => {
+  const handleOpenDialog = (user?: any) => {
     if (user) {
       setEditingUser(user);
       setFormData({
-        fullName: user.fullName,
-        email: user.email,
-        password: '',
-        phone: user.phone,
-        role: user.role,
-        storeId: user.storeId || '',
+        fullName: user.fullName || '',
+        email: user.email || '',
+        password: '', // Không hiện mật khẩu cũ vì lý do bảo mật
+        phone: user.phone || '',
+        role: user.role || 'STAFF',
+        storeId: user.storeId ? user.storeId.toString() : '',
       });
     } else {
       setEditingUser(null);
-      setFormData({
-        fullName: '',
-        email: '',
-        password: '',
-        phone: '',
-        role: UserRole.STAFF,
-        storeId: '',
-      });
+      setFormData({ fullName: '', email: '', password: '', phone: '', role: 'STAFF', storeId: '' });
     }
-    setFormErrors({});
     setOpenDialog(true);
   };
 
-  const handleCloseDialog = () => {
-    setOpenDialog(false);
-    setEditingUser(null);
-    setFormData({
-      fullName: '',
-      email: '',
-      password: '',
-      phone: '',
-      role: UserRole.STAFF,
-      storeId: '',
-    });
-    setFormErrors({});
-  };
-
-  const validateForm = () => {
-    const errors: Record<string, string> = {};
-    if (!formData.fullName.trim()) errors.fullName = 'Họ và tên là bắt buộc';
-    if (!formData.email.trim()) {
-      errors.email = 'Email là bắt buộc';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      errors.email = 'Email không hợp lệ';
-    }
-    if (!editingUser && !formData.password) {
-      errors.password = 'Mật khẩu là bắt buộc';
-    } else if (formData.password && formData.password.length < 6) {
-      errors.password = 'Mật khẩu phải có ít nhất 6 ký tự';
-    }
-    if (!formData.phone.trim()) {
-      errors.phone = 'Số điện thoại là bắt buộc';
-    } else if (!/^[0-9]{10,11}$/.test(formData.phone.replace(/\s/g, ''))) {
-      errors.phone = 'Số điện thoại không hợp lệ';
-    }
-    setFormErrors(errors);
-    return Object.keys(errors).length === 0;
-  };
-
-  const handleSave = () => {
-    if (!validateForm()) {
-      showToast('Vui lòng điền đầy đủ thông tin', 'warning');
-      return;
+  const handleSave = async () => {
+    // Validate nhanh
+    if (!formData.fullName || !formData.email || (!editingUser && !formData.password)) {
+       return showToast('Vui lòng điền đủ các trường bắt buộc (*)', 'warning');
     }
 
-    if (editingUser) {
-      // Update user
-      setUsers(users.map(u =>
-        u.id === editingUser.id
-          ? {
-              ...u,
-              fullName: formData.fullName,
-              email: formData.email,
-              phone: formData.phone,
-              role: formData.role,
-              storeId: formData.storeId || undefined,
-              updatedAt: new Date(),
-            }
-          : u
-      ));
-      showToast('Cập nhật người dùng thành công', 'success');
-    } else {
-      // Create new user
-      const newUser: User = {
-        id: Date.now().toString(),
-        email: formData.email,
-        fullName: formData.fullName,
-        phone: formData.phone,
-        role: formData.role,
-        storeId: formData.storeId || undefined,
-        isActive: true,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      };
-      setUsers([...users, newUser]);
-      showToast('Thêm người dùng thành công', 'success');
-    }
-    handleCloseDialog();
-  };
+    const payload = {
+      ...formData,
+      // Đảm bảo gửi đúng kiểu dữ liệu Backend cần
+      storeId: formData.storeId ? parseInt(formData.storeId) : null
+    };
 
-  const handleDelete = (id: string) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa người dùng này?')) {
-      setUsers(users.filter(u => u.id !== id));
-      showToast('Xóa người dùng thành công', 'success');
+    try {
+      if (editingUser) {
+        await userAPI.update(editingUser.id, payload);
+        showToast('Cập nhật người dùng thành công', 'success');
+      } else {
+        await userAPI.create(payload);
+        showToast('Tạo tài khoản thành công', 'success');
+      }
+      setOpenDialog(false);
+      loadUsers();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu dữ liệu', 'error');
     }
   };
 
-  const mockStores = [
-    { id: 'store-1', name: 'Cửa Hàng 1' },
-    { id: 'store-2', name: 'Cửa Hàng 2' },
-  ];
+  const handleDelete = async (id: number) => {
+    if (window.confirm('Bạn có chắc chắn muốn xóa/khóa người dùng này?')) {
+      try {
+        await userAPI.delete(id);
+        showToast('Đã thực hiện thành công', 'success');
+        loadUsers();
+      } catch (error: any) {
+        showToast('Lỗi khi thực hiện thao tác', 'error');
+      }
+    }
+  };
 
-  if (loading) {
-    return (
-      <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '400px' }}>
-        <CircularProgress />
-      </Box>
-    );
-  }
+  // Hàm dịch Role sang tiếng Việt để hiển thị trên bảng
+  const getRoleLabel = (role: string) => {
+    const roles: any = { 
+        'SUPER_ADMIN': 'Siêu Quản Trị', 
+        'ADMIN': 'Quản Trị', 
+        'MANAGER': 'Quản Lý', 
+        'STAFF': 'Nhân Viên' ,
+      
+    };
+    return roles[role] || role;
+  };
+
+  if (loading) return <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}><CircularProgress /></Box>;
 
   return (
-    <Box>
+    <Box className="fade-in">
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h5" sx={{ fontWeight: 600 }}>
-          Quản Lý Người Dùng
-        </Typography>
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>QUẢN LÝ NGƯỜI DÙNG</Typography>
         {isSuperAdmin() && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-              },
-            }}
-          >
+          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' } }}>
             Thêm Người Dùng
           </Button>
         )}
       </Box>
 
-      <Card>
-        <CardContent>
+      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+        <CardContent sx={{ p: 0 }}>
           <TableContainer>
             <Table>
-              <TableHead>
+              <TableHead sx={{ bgcolor: '#f8fafc' }}>
                 <TableRow>
-                  <TableCell>Người Dùng</TableCell>
-                  <TableCell>Email</TableCell>
-                  <TableCell>Số Điện Thoại</TableCell>
-                  <TableCell>Vai Trò</TableCell>
-                  <TableCell>Cửa Hàng</TableCell>
-                  <TableCell>Trạng Thái</TableCell>
-                  <TableCell align="right">Thao Tác</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Họ Tên</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Email</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Số Điện Thoại</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Vai Trò</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Đơn Vị</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>Thao Tác</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {users.map((user) => (
-                  <TableRow key={user.id}>
+                  <TableRow key={user.id} hover>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}>
-                          {user.fullName.charAt(0).toUpperCase()}
+                        <Avatar sx={{ bgcolor: '#1976d2', width: 32, height: 32, fontSize: '0.8rem' }}>
+                          {user.fullName?.charAt(0).toUpperCase()}
                         </Avatar>
-                        <Typography sx={{ fontWeight: 500 }}>
-                          {user.fullName}
-                        </Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{user.fullName}</Typography>
                       </Box>
                     </TableCell>
-                    <TableCell>{user.email}</TableCell>
-                    <TableCell>{user.phone}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.email}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.phone}</TableCell>
                     <TableCell>
-                      <Chip
-                        label={getRoleLabel(user.role)}
-                        color={getRoleColor(user.role) as any}
-                        size="small"
-                      />
+                      <Chip label={getRoleLabel(user.role)} size="small" color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
                     </TableCell>
-                    <TableCell>
-                      {user.storeId ? `Cửa hàng ${user.storeId}` : 'Toàn hệ thống'}
-                    </TableCell>
-                    <TableCell>
-                      <Chip
-                        label={user.isActive ? 'Hoạt động' : 'Khóa'}
-                        color={user.isActive ? 'success' : 'default'}
-                        size="small"
-                      />
-                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.storeName || 'Toàn hệ thống'}</TableCell>
                     <TableCell align="right">
                       {isSuperAdmin() && (
                         <>
-                          <IconButton size="small" color="primary" onClick={() => handleOpenDialog(user)}>
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            color={user.isActive ? 'warning' : 'success'}
-                            onClick={() => handleToggleActive(user.id)}
-                            sx={{
-                              ml: 0.5,
-                              '&:hover': {
-                                transform: 'scale(1.1)',
-                              },
-                            }}
-                          >
-                            {user.isActive ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
-                          </IconButton>
-                          <IconButton
-                            size="small"
-                            color="error"
-                            onClick={() => handleDelete(user.id)}
-                            sx={{
-                              ml: 0.5,
-                              '&:hover': {
-                                transform: 'scale(1.1)',
-                              },
-                            }}
-                          >
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
+                          <IconButton size="small" color="primary" onClick={() => handleOpenDialog(user)}><EditIcon fontSize="small" /></IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDelete(user.id)}><DeleteIcon fontSize="small" /></IconButton>
                         </>
                       )}
                     </TableCell>
@@ -370,112 +185,47 @@ export const UsersPage: React.FC = () => {
               </TableBody>
             </Table>
           </TableContainer>
+          <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+             <Pagination count={1} size="small" color="primary" />
+             <Typography variant="body2" color="text.secondary">Tổng: {users.length} nhân viên</Typography>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Add/Edit User Dialog */}
-      <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
-          {editingUser ? 'Chỉnh Sửa Người Dùng' : 'Thêm Người Dùng Mới'}
+      {/* Dialog Thêm/Sửa */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>
+            {editingUser ? 'CHỈNH SỬA THÔNG TIN' : 'TẠO TÀI KHOẢN MỚI'}
         </DialogTitle>
-        <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField
-              fullWidth
-              label="Họ và Tên"
-              value={formData.fullName}
-              onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
-              required
-              error={!!formErrors.fullName}
-              helperText={formErrors.fullName}
-            />
-            <TextField
-              fullWidth
-              label="Email"
-              type="email"
-              value={formData.email}
-              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-              required
-              error={!!formErrors.email}
-              helperText={formErrors.email}
-              disabled={!!editingUser}
-            />
-            <TextField
-              fullWidth
-              label={editingUser ? 'Mật Khẩu Mới (để trống nếu không đổi)' : 'Mật Khẩu'}
-              type="password"
-              value={formData.password}
-              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-              required={!editingUser}
-              error={!!formErrors.password}
-              helperText={formErrors.password}
-            />
-            <TextField
-              fullWidth
-              label="Số Điện Thoại"
-              value={formData.phone}
-              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-              required
-              error={!!formErrors.phone}
-              helperText={formErrors.phone}
-            />
-            <FormControl fullWidth required>
-              <InputLabel>Vai Trò</InputLabel>
-              <Select
-                label="Vai Trò"
-                value={formData.role}
-                onChange={(e) => setFormData({ ...formData, role: e.target.value as UserRole })}
-              >
-                <MenuItem value={UserRole.SUPER_ADMIN}>Siêu Quản Trị Viên</MenuItem>
-                <MenuItem value={UserRole.ADMIN}>Quản Trị Viên</MenuItem>
-                <MenuItem value={UserRole.MANAGER}>Quản Lý Cửa Hàng</MenuItem>
-                <MenuItem value={UserRole.STAFF}>Nhân Viên</MenuItem>
-              </Select>
-            </FormControl>
-            <FormControl fullWidth>
-              <InputLabel>Cửa Hàng</InputLabel>
-              <Select
-                label="Cửa Hàng"
-                value={formData.storeId}
-                onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}
-                disabled={formData.role === UserRole.ADMIN || formData.role === UserRole.SUPER_ADMIN}
-              >
-                <MenuItem value="">Toàn hệ thống</MenuItem>
-                {stores.map((s) => (
-                  <MenuItem key={s.id} value={s.id}>
-                    {s.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+        <DialogContent sx={{ pt: '24px !important', display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <TextField fullWidth size="small" label="Họ và Tên (*)" value={formData.fullName} onChange={(e) => setFormData({ ...formData, fullName: e.target.value })} />
+          <TextField fullWidth size="small" label="Email (Tên đăng nhập) (*)" value={formData.email} disabled={!!editingUser} onChange={(e) => setFormData({ ...formData, email: e.target.value })} />
+          <TextField fullWidth size="small" label={editingUser ? "Mật khẩu mới (Để trống nếu không đổi)" : "Mật khẩu (*)"} type="password" value={formData.password} onChange={(e) => setFormData({ ...formData, password: e.target.value })} />
+          <TextField fullWidth size="small" label="Số điện thoại (*)" value={formData.phone} onChange={(e) => setFormData({ ...formData, phone: e.target.value })} />
+          
+          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Vai Trò (*)</InputLabel>
+                <Select label="Vai Trò (*)" value={formData.role} onChange={(e) => setFormData({ ...formData, role: e.target.value })}>
+                  <MenuItem value="SUPER_ADMIN">Siêu Quản Trị</MenuItem>
+                  <MenuItem value="ADMIN">Quản Trị Viên</MenuItem>
+                  <MenuItem value="MANAGER">Quản Lý Cửa Hàng</MenuItem>
+                  <MenuItem value="STAFF">Nhân Viên</MenuItem>
+                </Select>
+              </FormControl>
+
+              <FormControl fullWidth size="small">
+                <InputLabel>Cửa Hàng Làm Việc</InputLabel>
+                <Select label="Cửa Hàng Làm Việc" value={formData.storeId} onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}>
+                  <MenuItem value="">Trụ sở chính (Toàn hệ thống)</MenuItem>
+                  {stores.map((s) => <MenuItem key={s.id} value={s.id.toString()}>{s.name}</MenuItem>)}
+                </Select>
+              </FormControl>
           </Box>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleCloseDialog}
-            sx={{
-              '&:hover': {
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            Hủy
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            {editingUser ? 'Cập Nhật' : 'Tạo Mới'}
-          </Button>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #eee' }}>
+          <Button onClick={() => setOpenDialog(false)} color="inherit">Hủy</Button>
+          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', boxShadow: 'none' }}>Lưu thông tin</Button>
         </DialogActions>
       </Dialog>
     </Box>

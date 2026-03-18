@@ -9,12 +9,32 @@ import {
   FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, AssignmentReturn as ReturnIcon
 } from '@mui/icons-material';
-import { orderAPI, type BackendHoaDonDTO } from '../../api/client';
+
+// 👉 1. IMPORT API VÀ TOAST
+import { orderAPI } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
+
+// 👉 2. KHAI BÁO TYPE 
+export interface BackendHoaDonDTO {
+  hoaDonId: number;
+  maHoaDon?: string;
+  ngayLap: string | Date;
+  tenKhachHang?: string;
+  dienThoaiKhachHang?: string;
+  tamTinh?: number;
+  chietKhau?: number;
+  tongPhaiThanhToan?: number;
+  tenNhanVien?: string;
+  tenCuaHang?: string;
+  trangThai?: string;
+}
 
 export const RetailOrdersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [rows, setRows] = useState<BackendHoaDonDTO[]>([]);
   const [loading, setLoading] = useState(false);
+  const { showToast } = useToastStore();
+
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   const filtered = useMemo(() => {
@@ -27,35 +47,50 @@ export const RetailOrdersPage: React.FC = () => {
     );
   }, [rows, searchQuery]);
 
+  // 👉 3. GỌI API LẤY DANH SÁCH ĐƠN BÁN LẺ
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    orderAPI
-      .query({ channel: 'RETAIL' })
+    
+    orderAPI.query({ channel: 'RETAIL' })
       .then((res) => {
         if (!mounted) return;
-        setRows(res.data ?? []);
+        const dataList = res.data.data || res.data || [];
+        setRows(dataList);
+      })
+      .catch((err) => {
+        if (mounted) showToast('Lỗi khi tải danh sách đơn bán lẻ', 'error');
+        console.error("Lỗi tải đơn bán lẻ:", err);
       })
       .finally(() => {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       });
+      
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [showToast]);
 
+  // 👉 4. GỌI API XUẤT EXCEL
   const downloadExcel = async () => {
-    const res = await orderAPI.exportExcel({ channel: 'RETAIL', keyword: searchQuery.trim() || undefined });
-    const blob = new Blob([res.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'don_ban_le.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      showToast('Đang tạo file Excel...', 'info');
+      const res = await orderAPI.exportExcel({ channel: 'RETAIL', keyword: searchQuery.trim() || undefined });
+      
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `don_ban_le_${new Date().getTime()}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showToast('Tải Excel thành công!', 'success');
+    } catch (error) {
+      showToast('Lỗi khi xuất file Excel', 'error');
+    }
   };
 
   return (
@@ -96,7 +131,7 @@ export const RetailOrdersPage: React.FC = () => {
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
                   
-                  {['Mã HĐ', 'Ngày Bán', 'Khách Hàng', 'Tổng Tiền', 'Giảm Giá', 'Khách Trả', 'Nhân Viên', 'Chi Nhánh', 'Trạng Thái'].map((col) => (
+                  {['Mã HĐ', 'Ngày Bán', 'Khách Hàng', 'Tổng Tiền', 'Giảm Giá', 'Khách Phải Trả', 'Nhân Viên', 'Chi Nhánh', 'Trạng Thái'].map((col) => (
                     <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
                         {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />

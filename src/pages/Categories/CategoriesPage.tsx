@@ -1,41 +1,34 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Card,
-  CardContent,
-  Typography,
-  Button,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  IconButton,
-  Grid,
-  Chip,
-  MenuItem,
-  FormControl,
-  InputLabel,
-  Select,
-  CircularProgress,
+  Box, Card, CardContent, Typography, Button, Dialog, DialogTitle,
+  DialogContent, DialogActions, TextField, Grid, Chip, MenuItem,
+  FormControl, InputLabel, Select, CircularProgress,
 } from '@mui/material';
 import {
-  Add as AddIcon,
-  Edit as EditIcon,
-  Delete as DeleteIcon,
-  Category as CategoryIcon,
+  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Category as CategoryIcon,
 } from '@mui/icons-material';
-import { Category } from '../../types';
 import { useToastStore } from '../../store/toastStore';
-import { useAuthStore } from '../../store/authStore';
-import { categoryAPI, BackendCategory } from '../../api/client';
+// Xóa useAuthStore vì chúng ta không dùng isSuperAdmin nữa
+import { categoryAPI } from '../../api/client';
+import { BackendCategory } from '../../types/api.types';
+
+// Type nội bộ cho CategoriesPage
+interface Category {
+  id: string;
+  name: string;
+  description?: string;
+  parentId?: string;
+  image?: string;
+  isActive: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
 
 export const CategoriesPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
-  const { isSuperAdmin } = useAuthStore();
 
   const [categories, setCategories] = useState<Category[]>([]);
 
@@ -43,24 +36,29 @@ export const CategoriesPage: React.FC = () => {
     loadCategories();
   }, []);
 
+  // HÀM LOAD ĐÃ ĐƯỢC NÂNG CẤP ĐỂ BẮT MỌI LOẠI DATA BACKEND TRẢ VỀ
   const loadCategories = async () => {
     try {
       setLoading(true);
       const response = await categoryAPI.getAll();
-      if (response.data.success) {
-        const backendCats = response.data.data || [];
-        const mappedCats: Category[] = backendCats.map((cat: BackendCategory) => ({
-          id: cat.id.toString(),
-          name: cat.name,
-          description: cat.description || undefined,
-          parentId: cat.parentId?.toString(),
-          image: cat.image || undefined,
-          isActive: cat.isActive,
-          createdAt: new Date(cat.createdAt),
-          updatedAt: new Date(cat.updatedAt),
-        }));
-        setCategories(mappedCats);
-      }
+      
+      const responseData = response.data as any;
+      // Dù backend trả về Mảng trực tiếp hay bọc trong ApiResponse thì đều lấy được
+      const backendCats = Array.isArray(responseData) ? responseData : (responseData?.data || []);
+
+      const mappedCats: Category[] = backendCats.map((cat: any) => ({
+        id: cat.id?.toString() || '',
+        name: cat.name || '',
+        description: cat.description || undefined,
+        parentId: cat.parentId?.toString() || undefined,
+        image: cat.image || undefined,
+        isActive: cat.isActive !== undefined ? cat.isActive : true,
+        createdAt: cat.createdAt ? new Date(cat.createdAt) : undefined,
+        updatedAt: cat.updatedAt ? new Date(cat.updatedAt) : undefined,
+      }));
+      
+      setCategories(mappedCats);
+      
     } catch (error: any) {
       showToast(error.message || 'Lỗi khi tải danh sách danh mục', 'error');
     } finally {
@@ -86,12 +84,7 @@ export const CategoriesPage: React.FC = () => {
       });
     } else {
       setEditingCategory(null);
-      setFormData({
-        name: '',
-        description: '',
-        parentId: '',
-        isActive: true,
-      });
+      setFormData({ name: '', description: '', parentId: '', isActive: true });
     }
     setOpenDialog(true);
   };
@@ -99,12 +92,7 @@ export const CategoriesPage: React.FC = () => {
   const handleCloseDialog = () => {
     setOpenDialog(false);
     setEditingCategory(null);
-    setFormData({
-      name: '',
-      description: '',
-      parentId: '',
-      isActive: true,
-    });
+    setFormData({ name: '', description: '', parentId: '', isActive: true });
   };
 
   const handleSave = async () => {
@@ -115,31 +103,24 @@ export const CategoriesPage: React.FC = () => {
 
     try {
       if (editingCategory) {
-        // Update
-        const response = await categoryAPI.update(parseInt(editingCategory.id), {
+        await categoryAPI.update(parseInt(editingCategory.id), {
           name: formData.name,
           description: formData.description || undefined,
           parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
           isActive: formData.isActive,
         });
-        if (response.data.success) {
-          showToast('Cập nhật danh mục thành công', 'success');
-          loadCategories();
-        }
+        showToast('Cập nhật danh mục thành công', 'success');
       } else {
-        // Create
-        const response = await categoryAPI.create({
+        await categoryAPI.create({
           name: formData.name,
           description: formData.description || undefined,
           parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
           isActive: formData.isActive,
         });
-        if (response.data.success) {
-          showToast('Thêm danh mục thành công', 'success');
-          loadCategories();
-        }
+        showToast('Thêm danh mục thành công', 'success');
       }
       handleCloseDialog();
+      loadCategories();
     } catch (error: any) {
       showToast(error.message || 'Lỗi khi lưu danh mục', 'error');
     }
@@ -148,21 +129,13 @@ export const CategoriesPage: React.FC = () => {
   const handleDelete = async (id: string) => {
     if (window.confirm('Bạn có chắc chắn muốn xóa danh mục này?')) {
       try {
-        const response = await categoryAPI.delete(parseInt(id));
-        if (response.data.success) {
-          showToast('Xóa danh mục thành công', 'success');
-          loadCategories();
-        }
+        await categoryAPI.delete(parseInt(id));
+        showToast('Xóa danh mục thành công', 'success');
+        loadCategories();
       } catch (error: any) {
         showToast(error.message || 'Lỗi khi xóa danh mục', 'error');
       }
     }
-  };
-
-  const getParentName = (parentId?: string) => {
-    if (!parentId) return null;
-    const parent = categories.find(cat => cat.id === parentId);
-    return parent?.name || null;
   };
 
   const topLevelCategories = categories.filter(cat => !cat.parentId);
@@ -177,43 +150,49 @@ export const CategoriesPage: React.FC = () => {
   }
 
   return (
-    <Box>
+    <Box className="fade-in">
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Typography variant="h5" sx={{ fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
           <CategoryIcon color="primary" />
           Quản Lý Danh Mục
         </Typography>
-        {isSuperAdmin() && (
-          <Button
-            variant="contained"
-            startIcon={<AddIcon />}
-            onClick={() => handleOpenDialog()}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-              },
-            }}
-          >
-            Thêm Danh Mục
-          </Button>
-        )}
+        
+        {/* NÚT THÊM DANH MỤC LUÔN HIỆN */}
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => handleOpenDialog()}
+          sx={{
+            background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
+            boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
+            '&:hover': {
+              background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
+              boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
+            },
+          }}
+        >
+          Thêm Danh Mục
+        </Button>
       </Box>
+
+      {topLevelCategories.length === 0 && !loading && (
+        <Card sx={{ p: 4, textAlign: 'center', borderRadius: 2, bgcolor: '#f8fafc', border: '1px dashed #cbd5e1' }}>
+          <Typography color="text.secondary">Chưa có danh mục nào. Hãy bấm "Thêm Danh Mục" để tạo mới!</Typography>
+        </Card>
+      )}
 
       <Grid container spacing={3}>
         {topLevelCategories.map((category) => (
           <Grid item xs={12} md={6} lg={4} key={category.id}>
-            <Card>
+            <Card sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box>
-                    <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 600, color: '#0f172a' }}>
                       {category.name}
                     </Typography>
                     {category.description && (
-                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5, fontStyle: 'italic' }}>
                         {category.description}
                       </Typography>
                     )}
@@ -224,6 +203,7 @@ export const CategoriesPage: React.FC = () => {
                     size="small"
                   />
                 </Box>
+                
                 {childCategories.filter(cat => cat.parentId === category.id).length > 0 && (
                   <Box sx={{ mt: 2 }}>
                     <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
@@ -233,34 +213,21 @@ export const CategoriesPage: React.FC = () => {
                       {childCategories
                         .filter(cat => cat.parentId === category.id)
                         .map(child => (
-                          <Chip key={child.id} label={child.name} size="small" variant="outlined" />
+                          <Chip key={child.id} label={child.name} size="small" variant="outlined" sx={{ bgcolor: '#f1f5f9' }} />
                         ))}
                     </Box>
                   </Box>
                 )}
-                {isSuperAdmin() && (
-                  <Box sx={{ display: 'flex', gap: 1, mt: 2 }}>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      startIcon={<EditIcon />}
-                      onClick={() => handleOpenDialog(category)}
-                      fullWidth
-                    >
-                      Sửa
-                    </Button>
-                    <Button
-                      size="small"
-                      variant="outlined"
-                      color="error"
-                      startIcon={<DeleteIcon />}
-                      onClick={() => handleDelete(category.id)}
-                      fullWidth
-                    >
-                      Xóa
-                    </Button>
-                  </Box>
-                )}
+                
+                {/* NÚT SỬA/XÓA LUÔN HIỆN */}
+                <Box sx={{ display: 'flex', gap: 1, mt: 3 }}>
+                  <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenDialog(category)} fullWidth>
+                    Sửa
+                  </Button>
+                  <Button size="small" variant="outlined" color="error" startIcon={<DeleteIcon />} onClick={() => handleDelete(category.id)} fullWidth>
+                    Xóa
+                  </Button>
+                </Box>
               </CardContent>
             </Card>
           </Grid>
@@ -269,79 +236,39 @@ export const CategoriesPage: React.FC = () => {
 
       {/* Add/Edit Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
-        <DialogTitle>
+        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>
           {editingCategory ? 'Chỉnh Sửa Danh Mục' : 'Thêm Danh Mục Mới'}
         </DialogTitle>
         <DialogContent>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-            <TextField
-              fullWidth
-              label="Tên Danh Mục"
-              value={formData.name}
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              required
-            />
-            <TextField
-              fullWidth
-              label="Mô Tả"
-              value={formData.description}
-              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-              multiline
-              rows={3}
-            />
-            <FormControl fullWidth>
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 2 }}>
+            <TextField fullWidth size="small" label="Tên Danh Mục *" value={formData.name} onChange={(e) => setFormData({ ...formData, name: e.target.value })} />
+            <TextField fullWidth size="small" label="Mô Tả" value={formData.description} onChange={(e) => setFormData({ ...formData, description: e.target.value })} multiline rows={3} />
+            <FormControl fullWidth size="small">
               <InputLabel>Danh Mục Cha</InputLabel>
-              <Select
-                label="Danh Mục Cha"
-                value={formData.parentId}
-                onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}
-              >
-                <MenuItem value="">Không có (Danh mục gốc)</MenuItem>
+              <Select label="Danh Mục Cha" value={formData.parentId} onChange={(e) => setFormData({ ...formData, parentId: e.target.value })}>
+                <MenuItem value="">Không có (Tạo danh mục gốc)</MenuItem>
                 {topLevelCategories
                   .filter(cat => !editingCategory || cat.id !== editingCategory.id)
                   .map(cat => (
-                    <MenuItem key={cat.id} value={cat.id}>
-                      {cat.name}
-                    </MenuItem>
+                    <MenuItem key={cat.id} value={cat.id}>{cat.name}</MenuItem>
                   ))}
               </Select>
             </FormControl>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography>Trạng thái:</Typography>
+              <Typography variant="body2" sx={{ fontWeight: 600 }}>Trạng thái:</Typography>
               <Chip
-                label={formData.isActive ? 'Hoạt động' : 'Ngừng'}
+                label={formData.isActive ? 'Hoạt động' : 'Ngừng kinh doanh'}
                 color={formData.isActive ? 'success' : 'default'}
                 onClick={() => setFormData({ ...formData, isActive: !formData.isActive })}
-                sx={{ cursor: 'pointer' }}
+                sx={{ cursor: 'pointer', fontWeight: 600 }}
               />
             </Box>
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button
-            onClick={handleCloseDialog}
-            sx={{
-              '&:hover': {
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            Hủy
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleSave}
-            sx={{
-              background: 'linear-gradient(45deg, #1976d2 30%, #42a5f5 90%)',
-              boxShadow: '0 3px 10px rgba(25, 118, 210, 0.3)',
-              '&:hover': {
-                background: 'linear-gradient(45deg, #1565c0 30%, #1976d2 90%)',
-                boxShadow: '0 6px 20px rgba(25, 118, 210, 0.4)',
-                transform: 'translateY(-2px)',
-              },
-            }}
-          >
-            {editingCategory ? 'Cập Nhật' : 'Tạo Mới'}
+          <Button onClick={handleCloseDialog} color="inherit">Hủy</Button>
+          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, boxShadow: 'none' }}>
+            {editingCategory ? 'Lưu Cập Nhật' : 'Tạo Danh Mục'}
           </Button>
         </DialogActions>
       </Dialog>

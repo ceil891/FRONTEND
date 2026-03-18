@@ -33,7 +33,7 @@ import {
 } from '@mui/icons-material';
 import { ActivityLog } from '../../types';
 import { format } from 'date-fns';
-import { activityLogAPI, BackendActivityLog } from '../../api/client';
+
 import { useToastStore } from '../../store/toastStore';
 
 export const ActivityLogsPage: React.FC = () => {

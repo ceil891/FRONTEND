@@ -8,12 +8,29 @@ import {
   Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, PictureAsPdf as PdfIcon
 } from '@mui/icons-material';
-import { orderHistoryAPI, type BackendOrderHistoryRow } from '../../api/client';
+
+// 👉 THÊM IMPORT API
+import { orderAPI } from '../../api/client'; 
+import { useToastStore } from '../../store/toastStore';
+
+// KHAI BÁO TYPE CHO LỊCH SỬ GIAO DỊCH
+export interface BackendOrderHistoryRow {
+  id: number;
+  maGD: string;
+  thoiGian: string;
+  loaiGD: string;
+  doiTuong?: string;
+  giaTri: number;
+  phuongThuc?: string;
+  nhanVien?: string;
+}
 
 export const OrderHistoryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [rows, setRows] = useState<BackendOrderHistoryRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const { showToast } = useToastStore();
+
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   const filtered = useMemo(() => {
@@ -29,32 +46,46 @@ export const OrderHistoryPage: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    orderHistoryAPI
-      .getAll()
+    
+    // 👉 SỬA LẠI THÀNH orderAPI CHUNG CHO ĐỒNG BỘ
+    orderAPI.query({ type: 'HISTORY' }) // Truyền param history để backend biết
       .then((res) => {
         if (!mounted) return;
-        setRows(res.data ?? []);
+        const dataList = res.data.data || res.data || [];
+        setRows(dataList);
+      })
+      .catch((err) => {
+        if (mounted) showToast('Lỗi khi tải lịch sử giao dịch', 'error');
       })
       .finally(() => {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       });
+      
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [showToast]);
 
   const downloadExcel = async () => {
-    const res = await orderHistoryAPI.exportExcel({ keyword: searchQuery.trim() || undefined });
-    const blob = new Blob([res.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'lich_su_giao_dich.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      showToast('Đang tạo file Excel...', 'info');
+      // 👉 SỬA LẠI THÀNH orderAPI
+      const res = await orderAPI.exportExcel({ type: 'HISTORY', keyword: searchQuery.trim() || undefined });
+      
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `lich_su_giao_dich_${new Date().getTime()}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showToast('Tải Excel thành công!', 'success');
+    } catch (error) {
+      showToast('Lỗi khi tải file Excel', 'error');
+    }
   };
 
   const getTransactionTypeChip = (type: string) => {
@@ -74,7 +105,6 @@ export const OrderHistoryPage: React.FC = () => {
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           
-          {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
               size="small" placeholder="Tìm: Mã GD/Khách hàng" 

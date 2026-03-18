@@ -8,12 +8,30 @@ import {
   Delete as DeleteIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, Restore as RestoreIcon
 } from '@mui/icons-material';
-import { orderAPI, type BackendHoaDonDTO } from '../../api/client';
+
+// 👉 1. IMPORT API VÀ STORE (Bắt buộc phải có để code không bị lỗi "orderAPI is not defined")
+import { orderAPI } from '../../api/client'; 
+import { useToastStore } from '../../store/toastStore';
+
+// 👉 2. KHAI BÁO TYPE (Để TypeScript không báo lỗi đỏ)
+export interface BackendHoaDonDTO {
+  hoaDonId: number;
+  maHoaDon?: string;
+  ngayHuy?: string;
+  tenKhachHang?: string;
+  dienThoaiKhachHang?: string;
+  tongPhaiThanhToan?: number;
+  lyDoHuy?: string;
+  nguoiHuy?: string;
+  trangThai?: string;
+}
 
 export const CancelledOrdersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [rows, setRows] = useState<BackendHoaDonDTO[]>([]);
   const [loading, setLoading] = useState(false);
+  const { showToast } = useToastStore(); // Dùng để hiện thông báo mượt mà
+
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   const filtered = useMemo(() => {
@@ -26,35 +44,52 @@ export const CancelledOrdersPage: React.FC = () => {
     );
   }, [rows, searchQuery]);
 
+  // 👉 3. GỌI API LẤY DANH SÁCH (Đã thêm xử lý bắt lỗi và bóc tách dữ liệu)
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    orderAPI
-      .query({ status: 'CANCELLED' })
+    
+    orderAPI.query({ status: 'CANCELLED' })
       .then((res) => {
         if (!mounted) return;
-        setRows(res.data ?? []);
+        // Chú ý: Backend Spring Boot thường bọc data trong 1 lớp "data" nữa của BaseResponse
+        const dataList = res.data.data || res.data || []; 
+        setRows(dataList);
+      })
+      .catch((err) => {
+        if (mounted) showToast('Lỗi khi tải danh sách đơn hủy', 'error');
+        console.error("Lỗi API Đơn Hủy:", err);
       })
       .finally(() => {
         if (!mounted) return;
         setLoading(false);
       });
+      
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [showToast]);
 
+  // 👉 4. GỌI API TẢI EXCEL (Thêm try-catch để không bị sập trang nếu lỗi mạng)
   const downloadExcel = async () => {
-    const res = await orderAPI.exportExcel({ status: 'CANCELLED', keyword: searchQuery.trim() || undefined });
-    const blob = new Blob([res.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'don_bi_huy.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      showToast('Đang tạo file Excel...', 'info');
+      const res = await orderAPI.exportExcel({ status: 'CANCELLED', keyword: searchQuery.trim() || undefined });
+      
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'don_bi_huy.xlsx';
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showToast('Tải Excel thành công!', 'success');
+    } catch (error) {
+      showToast('Lỗi khi xuất file Excel', 'error');
+    }
   };
 
   return (
@@ -68,7 +103,6 @@ export const CancelledOrdersPage: React.FC = () => {
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           
-          {/* THANH TOOLBAR */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
               size="small" placeholder="Tìm: Mã HĐ/Tên KH/Lý do" 

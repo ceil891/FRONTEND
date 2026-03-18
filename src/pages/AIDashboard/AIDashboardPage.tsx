@@ -29,7 +29,7 @@ import {
   CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import { AIRecommendation, DemandPrediction, AIRecommendationType } from '../../types';
-import { aiAPI, BackendAIRecommendation, BackendDemandPrediction } from '../../api/client';
+
 import { useToastStore } from '../../store/toastStore';
 
 export const AIDashboardPage: React.FC = () => {
