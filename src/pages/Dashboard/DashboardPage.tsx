@@ -18,7 +18,7 @@ import {
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { DashboardStats } from '../../types';
-import { dashboardAPI } from '../../api/client';
+
 
 const StatCard: React.FC<{
   title: string;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Button, IconButton, TextField,
@@ -10,30 +10,45 @@ import {
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
 
-// Dữ liệu mẫu (Thay bằng API sau)
-const mockSizes = [
-  { id: 1, name: 'S', description: 'Size Nhỏ', isActive: true },
-  { id: 2, name: 'M', description: 'Size Trung bình', isActive: true },
-  { id: 3, name: 'L', description: 'Size Lớn', isActive: true },
-];
+// IMPORT API VÀ TYPES VỪA TẠO
+import { sizeAPI } from '../../api/client';
+import { BackendSize } from '../../types/api.types';
 
 export const SizePage: React.FC = () => {
-  const [sizes, setSizes] = useState(mockSizes);
+  // 1. Thay mock data bằng state rỗng và kiểu BackendSize[]
+  const [sizes, setSizes] = useState<BackendSize[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<BackendSize | null>(null);
   
   const [formData, setFormData] = useState({ name: '', description: '', isActive: true });
   
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
+const fetchSizes = async () => {
+    try {
+      const res = await sizeAPI.getAll();
+      const responseData = res.data as any;
+      const items = Array.isArray(responseData) ? responseData : (responseData?.data || []);
+      setSizes(items);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi tải danh sách kích thước', 'error');
+    }
+  };
+
+  // Gọi fetchSizes lần đầu khi vào trang
+  useEffect(() => {
+    fetchSizes();
+  }, []);
+
   const filteredSizes = sizes.filter(s => s.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const handleOpenDialog = (item?: any) => {
+  const handleOpenDialog = (item?: BackendSize) => {
     if (item) {
       setEditingItem(item);
-      setFormData({ name: item.name, description: item.description, isActive: item.isActive });
+      // Chuyển status 'ACTIVE' thành true/false cho checkbox hoặc switch trên UI
+      setFormData({ name: item.name, description: item.description || '', isActive: item.status === 'ACTIVE' });
     } else {
       setEditingItem(null);
       setFormData({ name: '', description: '', isActive: true });
@@ -41,19 +56,41 @@ export const SizePage: React.FC = () => {
     setOpenDialog(true);
   };
 
-  const handleSave = () => {
+  // 3. Hàm Xử lý Lưu (Create/Update)
+  const handleSave = async () => {
     if (!formData.name.trim()) return showToast('Vui lòng nhập tên kích thước', 'warning');
     
-    // TODO: Gọi API Create/Update ở đây
-    showToast(editingItem ? 'Cập nhật thành công' : 'Tạo mới thành công', 'success');
-    setOpenDialog(false);
+    const payload = {
+      name: formData.name,
+      description: formData.description,
+      status: formData.isActive ? 'ACTIVE' : 'INACTIVE' // Chuyển ngược lại cho Backend
+    };
+
+    try {
+      if (editingItem) {
+        await sizeAPI.update(editingItem.id, payload);
+        showToast('Cập nhật thành công', 'success');
+      } else {
+        await sizeAPI.create(payload);
+        showToast('Tạo mới thành công', 'success');
+      }
+      setOpenDialog(false);
+      fetchSizes(); // Load lại bảng sau khi lưu
+    } catch (error: any) {
+      showToast(error.message || 'Có lỗi xảy ra khi lưu', 'error');
+    }
   };
 
-  const handleDelete = (id: number) => {
+  // 4. Hàm Xử lý Xóa
+  const handleDelete = async (id: number) => {
     if (window.confirm('Chắc chắn muốn xóa kích thước này?')) {
-      // TODO: Gọi API Delete ở đây
-      setSizes(sizes.filter(s => s.id !== id));
-      showToast('Đã xóa thành công', 'success');
+      try {
+        await sizeAPI.delete(id);
+        showToast('Đã xóa thành công', 'success');
+        fetchSizes(); // Load lại bảng sau khi xóa
+      } catch (error: any) {
+        showToast(error.message || 'Lỗi khi xóa kích thước', 'error');
+      }
     }
   };
 
@@ -99,7 +136,8 @@ export const SizePage: React.FC = () => {
                     <TableCell sx={{ fontWeight: 700, color: '#0284c7' }}>{row.name}</TableCell>
                     <TableCell>{row.description}</TableCell>
                     <TableCell>
-                      <Chip label={row.isActive ? 'Hoạt động' : 'Ngừng'} size="small" color={row.isActive ? 'success' : 'default'} />
+                      {/* Cập nhật lại UI đọc từ row.status */}
+                      <Chip label={row.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng'} size="small" color={row.status === 'ACTIVE' ? 'success' : 'default'} />
                     </TableCell>
                     {isSuperAdmin() && (
                       <TableCell align="right">
@@ -109,14 +147,24 @@ export const SizePage: React.FC = () => {
                     )}
                   </TableRow>
                 ))}
+                
+                {filteredSizes.length === 0 && (
+                   <TableRow>
+                     <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                        Chưa có dữ liệu kích thước
+                     </TableCell>
+                   </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
-          <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between' }}><Pagination count={1} size="small" color="primary" /><Typography variant="body2" color="text.secondary">Tổng: {filteredSizes.length} bản ghi</Typography></Box>
+          <Box sx={{ p: 1.5, display: 'flex', justifyContent: 'space-between' }}>
+              <Pagination count={1} size="small" color="primary" />
+              <Typography variant="body2" color="text.secondary">Tổng: {filteredSizes.length} bản ghi</Typography>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Dialog Thêm/Sửa */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>{editingItem ? 'SỬA KÍCH THƯỚC' : 'THÊM KÍCH THƯỚC'}</DialogTitle>
         <DialogContent sx={{ pt: '20px !important', display: 'flex', flexDirection: 'column', gap: 2 }}>

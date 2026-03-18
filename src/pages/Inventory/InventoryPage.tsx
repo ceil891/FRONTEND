@@ -34,7 +34,7 @@ import {
 import { Inventory, InventoryTransactionType } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
-import { inventoryAPI, productAPI, storeAPI, BackendInventory, BackendSanPham, BackendStore } from '../../api/client';
+
 
 export const InventoryPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);

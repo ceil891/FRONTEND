@@ -20,7 +20,7 @@ import {
 } from '@mui/icons-material';
 import { useAuthStore } from '../../store/authStore';
 import { useToastStore } from '../../store/toastStore';
-import { settingsAPI, NotificationSettings } from '../../api/client';
+
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuthStore();

@@ -1,156 +1,232 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip, TextField, Button,
-  Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Checkbox, Pagination
+  TableContainer, TableHead, TableRow, Chip, TextField, MenuItem,
+  FormControl, InputLabel, Select, Button, CircularProgress,
+  Dialog, DialogTitle, DialogContent, DialogActions, Divider
 } from '@mui/material';
 import {
-  Payment as PaymentIcon, Add as AddIcon,
-  Visibility as ViewIcon, Print as PrintIcon,
-  FileDownload as ExcelIcon, FilterAlt as FilterIcon, Delete as DeleteIcon
+  Add as AddIcon, Visibility as ViewIcon, Print as PrintIcon,
+  Sync as SyncIcon, Payments as PaymentIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-
-// Dữ liệu mẫu Phiếu Chi
-const mockPayments = [
-  { no: 1, id: 'PC260301', date: '05/03/2026', receiver: 'Điện Lực TP', amount: 3500000, reason: 'Thanh toán tiền điện tháng 2', method: 'Chuyển khoản', creator: 'Nguyễn Văn A', status: 'Đã hoàn tất' },
-  { no: 2, id: 'PC260302', date: '05/03/2026', receiver: 'Nhà cung cấp A', amount: 12000000, reason: 'Thanh toán công nợ đợt 1', method: 'Chuyển khoản', creator: 'Kế toán trưởng', status: 'Đã hoàn tất' },
-  { no: 3, id: 'PC260303', date: '06/03/2026', receiver: 'Nhân viên tạp vụ', amount: 500000, reason: 'Chi tiền mua dụng cụ vệ sinh', method: 'Tiền mặt', creator: 'Thành Đào', status: 'Chờ duyệt' },
-];
+import { cashbookAPI, CashbookTransactionResponse } from '../../api/client';
+import dayjs from 'dayjs';
 
 export const PaymentPage: React.FC = () => {
-  const [openDialog, setOpenDialog] = useState(false);
+  // --- STATES QUẢN LÝ DỮ LIỆU ---
+  const [payments, setPayments] = useState<CashbookTransactionResponse[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [methodFilter, setMethodFilter] = useState('ALL');
+
+  // --- STATES CHO DIALOG LẬP PHIẾU ---
+  const [openAddDialog, setOpenAddDialog] = useState(false);
+  const [formData, setFormData] = useState({
+    receiver: '',
+    amount: '',
+    reason: '',
+    method: 'CASH' as 'CASH' | 'BANK_TRANSFER'
+  });
+
+  // --- STATES CHO DIALOG XEM CHI TIẾT ---
+  const [openViewDialog, setOpenViewDialog] = useState(false);
+  const [selectedPayment, setSelectedPayment] = useState<CashbookTransactionResponse | null>(null);
+
   const { showToast } = useToastStore();
 
-  const [formData, setFormData] = useState({ receiver: '', amount: '', reason: '', method: 'TRANSFER' });
-
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
-
-  const handleSave = () => {
-    if (!formData.receiver || !formData.amount) {
-      return showToast('Vui lòng nhập người nhận và số tiền', 'warning');
+  // 1. Hàm lấy dữ liệu Phiếu Chi từ API
+  const fetchPayments = async () => {
+    setLoading(true);
+    try {
+      const res = await cashbookAPI.getAll({
+        type: 'EXPENSE', // Chỉ lấy loại CHI
+        method: methodFilter === 'ALL' ? undefined : (methodFilter as any),
+        search: searchQuery
+      });
+      const data = (res.data as any)?.data || res.data || [];
+      setPayments(Array.isArray(data) ? data : []);
+    } catch (error: any) {
+      showToast('Lỗi khi tải danh sách phiếu chi', 'error');
+    } finally {
+      setLoading(false);
     }
-    showToast('Tạo phiếu chi thành công!', 'success');
-    setOpenDialog(false);
-    setFormData({ receiver: '', amount: '', reason: '', method: 'TRANSFER' });
   };
 
-  const filteredPayments = mockPayments.filter(p => 
-    p.id.includes(searchQuery) || p.receiver.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    fetchPayments();
+  }, [methodFilter]);
+
+  // 2. Hàm lưu phiếu chi mới
+  const handleSave = async () => {
+    if (!formData.receiver || !formData.amount) {
+      return showToast('Vui lòng nhập đủ thông tin bắt buộc', 'warning');
+    }
+    try {
+      setLoading(true);
+      await cashbookAPI.create({
+        type: 'EXPENSE',
+        method: formData.method,
+        category: "Chi phí vận hành", // Hạng mục mặc định
+        referenceName: formData.receiver,
+        amount: Number(formData.amount),
+        description: formData.reason,
+        storeId: 1, // Nên lấy từ Context Store
+        creatorId: 1 // Nên lấy từ Auth User
+      });
+
+      showToast('Tạo phiếu chi thành công & Đã sync Google Sheets!', 'success');
+      setOpenAddDialog(false);
+      setFormData({ receiver: '', amount: '', reason: '', method: 'CASH' });
+      fetchPayments();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Lỗi khi tạo phiếu chi', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 3. Hàm mở xem chi tiết
+  const handleOpenView = (payment: CashbookTransactionResponse) => {
+    setSelectedPayment(payment);
+    setOpenViewDialog(true);
+  };
+
+  const formatCurrency = (val: number) => 
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
 
   return (
     <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          DANH SÁCH PHIẾU CHI
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700, color: '#2c3e50', display: 'flex', alignItems: 'center', gap: 1 }}>
+          <PaymentIcon color="error" /> DANH SÁCH PHIẾU CHI
         </Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setOpenAddDialog(true)} sx={{ bgcolor: '#00a65a', textTransform: 'none' }}>
+          Lập Phiếu Chi
+        </Button>
       </Box>
 
-      {/* BẢNG CHUẨN RIC */}
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          {/* THANH TOOLBAR ĐA MÀU SẮC */}
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Mã phiếu/Người nhận..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            
-            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setOpenDialog(true)} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Lập Phiếu Chi</Button>
-            <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Hủy Phiếu</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Phiếu</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-          </Box>
+      <Card sx={{ borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+        <Box sx={{ p: 2, display: 'flex', gap: 1.5, alignItems: 'center', borderBottom: '1px solid #f1f5f9' }}>
+          <TextField 
+            size="small" placeholder="Mã phiếu / Người nhận..." 
+            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && fetchPayments()}
+            sx={{ width: 300 }}
+          />
+          <FormControl size="small" sx={{ width: 200 }}>
+            <InputLabel>Hình thức</InputLabel>
+            <Select value={methodFilter} label="Hình thức" onChange={(e) => setMethodFilter(e.target.value)}>
+              <MenuItem value="ALL">Tất cả hình thức</MenuItem>
+              <MenuItem value="CASH">Tiền mặt</MenuItem>
+              <MenuItem value="BANK_TRANSFER">Chuyển khoản</MenuItem>
+            </Select>
+          </FormControl>
+          <Button startIcon={<SyncIcon />} onClick={fetchPayments} variant="outlined" sx={{ textTransform: 'none' }}>Làm mới</Button>
+        </Box>
 
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer>
-            <Table sx={{ minWidth: 1200 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 50, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Xem</TableCell>
-
-                  {['Mã Phiếu', 'Ngày Lập', 'Người Nhận Tiền', 'Lý Do Chi', 'Hình Thức', 'Số Tiền (-)', 'Người Lập', 'Trạng Thái'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
+        <TableContainer>
+          <Table sx={{ minWidth: 1000 }}>
+            <TableHead sx={{ bgcolor: '#f8fafc' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 700 }}>Ngày Lập</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Mã Phiếu</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Người Nhận</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Hình Thức</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Số Tiền (-)</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Thao Tác</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
+              ) : payments.length === 0 ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}>Không tìm thấy phiếu chi nào</TableCell></TableRow>
+              ) : payments.map((row) => (
+                <TableRow key={row.id} hover>
+                  <TableCell>{dayjs(row.transactionDate).format('DD/MM/YYYY HH:mm')}</TableCell>
+                  <TableCell sx={{ fontWeight: 700, color: '#d32f2f' }}>{row.code}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{row.referenceName}</TableCell>
+                  <TableCell>
+                    <Chip 
+                      label={row.method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'} 
+                      size="small" color={row.method === 'CASH' ? 'warning' : 'info'} variant="outlined"
+                    />
+                  </TableCell>
+                  <TableCell align="right" sx={{ color: '#dc2626', fontWeight: 800 }}>
+                    -{formatCurrency(row.amount)}
+                  </TableCell>
+                  <TableCell align="center">
+                    <Button size="small" startIcon={<ViewIcon />} onClick={() => handleOpenView(row)}>Xem</Button>
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredPayments.map((row) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                        <Box sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><ViewIcon sx={{ fontSize: 14 }} /></Box>
-                      </Box>
-                    </TableCell>
-
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0284c7', p: 1.5 }}>{row.id}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.date}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.receiver}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.reason}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.method}</TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#dc2626', p: 1.5 }}>
-                      -{formatCurrency(row.amount)}
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.creator}</TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      {row.status === 'Đã hoàn tất' ? 
-                        <Chip label={row.status} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                        <Chip label={row.status} size="small" sx={{ bgcolor: '#fef08a', color: '#854d0e', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                      }
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {filteredPayments.length} of {filteredPayments.length} items</Typography>
-          </Box>
-        </CardContent>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Card>
 
-      {/* ================= DIALOG LẬP PHIẾU CHI ================= */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>LẬP PHIẾU CHI MỚI</DialogTitle>
-        <DialogContent sx={{ pt: '24px !important' }}>
-          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-            <TextField size="small" label="Họ tên người/đơn vị nhận (*)" fullWidth value={formData.receiver} onChange={(e) => setFormData({...formData, receiver: e.target.value})} required />
-            <TextField size="small" label="Số tiền chi (VNĐ) (*)" type="number" fullWidth value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} required />
-            <FormControl fullWidth size="small">
-              <InputLabel>Phương thức thanh toán</InputLabel>
-              <Select value={formData.method} label="Phương thức thanh toán" onChange={(e) => setFormData({...formData, method: e.target.value})}>
-                <MenuItem value="CASH">Tiền mặt</MenuItem>
-                <MenuItem value="TRANSFER">Chuyển khoản ngân hàng</MenuItem>
-              </Select>
-            </FormControl>
-            <TextField size="small" label="Lý do chi tiền" fullWidth multiline rows={3} value={formData.reason} onChange={(e) => setFormData({...formData, reason: e.target.value})} placeholder="VD: Trả tiền nhập hàng, trả lương..." />
-          </Box>
+      {/* --- DIALOG XEM CHI TIẾT --- */}
+      <Dialog open={openViewDialog} onClose={() => setOpenViewDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, textAlign: 'center', bgcolor: '#fef2f2' }}>CHI TIẾT PHIẾU CHI</DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+          {selectedPayment && (
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Mã phiếu:</Typography>
+                <Typography variant="body2" fontWeight={700} color="error">{selectedPayment.code}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Thời gian:</Typography>
+                <Typography variant="body2">{dayjs(selectedPayment.transactionDate).format('DD/MM/YYYY HH:mm:ss')}</Typography>
+              </Box>
+              <Divider />
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Người nhận tiền:</Typography>
+                <Typography variant="body2" fontWeight={600}>{selectedPayment.referenceName}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Số tiền chi:</Typography>
+                <Typography variant="h6" color="#dc2626" fontWeight={800}>{formatCurrency(selectedPayment.amount)}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Phương thức:</Typography>
+                <Typography variant="body2">{selectedPayment.method === 'CASH' ? 'Tiền mặt' : 'Chuyển khoản'}</Typography>
+              </Box>
+              <Box sx={{ mt: 1 }}>
+                <Typography variant="body2" color="text.secondary">Lý do chi / Ghi chú:</Typography>
+                <Typography variant="body2" sx={{ p: 1.5, bgcolor: '#f8fafc', borderRadius: 1, mt: 0.5 }}>
+                  {selectedPayment.description || 'Không có ghi chú'}
+                </Typography>
+              </Box>
+            </Box>
+          )}
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Button onClick={() => setOpenDialog(false)} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy Bỏ</Button>
-          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
-            Tạo Phiếu Chi
+        <DialogActions>
+          <Button onClick={() => window.print()} startIcon={<PrintIcon />}>In Phiếu</Button>
+          <Button onClick={() => setOpenViewDialog(false)} variant="contained">Đóng</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* --- DIALOG LẬP PHIẾU MỚI --- */}
+      <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>LẬP PHIẾU CHI MỚI</DialogTitle>
+        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          <TextField label="Người nhận tiền (*)" fullWidth size="small" autoFocus value={formData.receiver} onChange={(e) => setFormData({...formData, receiver: e.target.value})} />
+          <TextField label="Số tiền chi (VNĐ) (*)" type="number" fullWidth size="small" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
+          <FormControl fullWidth size="small">
+            <InputLabel>Hình thức</InputLabel>
+            <Select value={formData.method} label="Hình thức" onChange={(e) => setFormData({...formData, method: e.target.value as any})}>
+              <MenuItem value="CASH">Tiền mặt</MenuItem>
+              <MenuItem value="BANK_TRANSFER">Chuyển khoản</MenuItem>
+            </Select>
+          </FormControl>
+          <TextField label="Lý do chi / Ghi chú" multiline rows={2} fullWidth size="small" value={formData.reason} onChange={(e) => setFormData({...formData, reason: e.target.value})} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenAddDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleSave} disabled={loading} sx={{ bgcolor: '#00a65a' }}>
+            {loading ? 'Đang lưu...' : 'Lập Phiếu Chi'}
           </Button>
         </DialogActions>
       </Dialog>

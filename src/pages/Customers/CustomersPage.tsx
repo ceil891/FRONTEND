@@ -1,142 +1,188 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
   Checkbox, Chip, Dialog, DialogTitle, DialogContent, DialogActions,
-  FormControl, InputLabel, Select, MenuItem, Grid
+  FormControl, InputLabel, Select, MenuItem, Grid, CircularProgress, IconButton
 } from '@mui/material';
 import {
   Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
-  QrCode as QrCodeIcon, FileUpload as ImportIcon, FileDownload as ExcelIcon, 
+  FileUpload as ImportIcon, FileDownload as ExcelIcon, 
   FilterAlt as FilterIcon, Edit as EditIcon, SwapHoriz as TransferIcon,
   Stars as StarsIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-
-// Dữ liệu mẫu
-const initialCustomers = [
-  { no: 1, khuVuc: 'Miền Bắc', nhom: 'SILVER', maKH: 'KL', tenToChuc: 'Khách lẻ', diaChi: 'Hà Nội', dienThoai: '0988123123', email: 'khachle@gmail.com', nhanVien: 'Admin', coTheDatHang: '1' },
-  { no: 2, khuVuc: 'Hà Nội', nhom: 'DIAMOND', maKH: 'KH001', tenToChuc: 'Công ty ABC', diaChi: 'Cầu Giấy', dienThoai: '0901234567', email: 'abc@gmail.com', nhanVien: 'Admin', coTheDatHang: '1' },
-];
+import { customerAPI, areaAPI } from '../../api/client'; // Import API thật
 
 export const CustomersPage: React.FC = () => {
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [areas, setAreas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState<any>(null);
   const { showToast } = useToastStore();
 
-  // State cho Form
+  // State Form chuẩn theo CustomerRequest bên Java
   const [formData, setFormData] = useState({
-    maKH: '', tenToChuc: '', dienThoai: '', email: '', diaChi: '', 
-    khuVuc: 'Hà Nội', nhom: 'SILVER', nhanVien: 'Admin', coTheDatHang: '1'
+    code: '', fullName: '', phone: '', email: '', address: '', 
+    areaId: '', canPlaceOrder: true, tier: 'SILVER'
   });
 
-  const handleToolbarClick = (action: string) => {
-    if (action === 'Thêm') {
-      setEditingCustomer(null);
-      setFormData({ maKH: '', tenToChuc: '', dienThoai: '', email: '', diaChi: '', khuVuc: 'Hà Nội', nhom: 'SILVER', nhanVien: 'Admin', coTheDatHang: '1' });
-      setOpenDialog(true);
-    } else {
-      console.log(`Thực hiện: ${action}`);
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      setLoading(true);
+      const [custRes, areaRes] = await Promise.all([
+        customerAPI.getAll(),
+        areaAPI.getAll()
+      ]);
+      
+      const cData = custRes.data as any;
+      setCustomers(Array.isArray(cData) ? cData : (cData?.data || []));
+      
+      const aData = areaRes.data as any;
+      setAreas(Array.isArray(aData) ? aData : (aData?.data || []));
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi tải dữ liệu', 'error');
+    } finally {
+      setLoading(false);
     }
   };
 
-  const handleEdit = (customer: any) => {
-    setEditingCustomer(customer);
-    setFormData({ ...customer });
+  const handleOpenDialog = (customer?: any) => {
+    if (customer) {
+      setEditingCustomer(customer);
+      setFormData({
+        code: customer.code || '',
+        fullName: customer.fullName || '',
+        phone: customer.phone || '',
+        email: customer.email || '',
+        address: customer.address || '',
+        areaId: customer.areaId?.toString() || '',
+        canPlaceOrder: customer.canPlaceOrder ?? true,
+        tier: customer.tier || 'SILVER'
+      });
+    } else {
+      setEditingCustomer(null);
+      setFormData({ code: '', fullName: '', phone: '', email: '', address: '', areaId: '', canPlaceOrder: true, tier: 'SILVER' });
+    }
     setOpenDialog(true);
   };
 
-  const handleSave = () => {
-    if (!formData.tenToChuc || !formData.dienThoai) {
-      return showToast('Vui lòng nhập tên và số điện thoại', 'warning');
+  const handleSave = async () => {
+    if (!formData.fullName || !formData.phone || !formData.code) {
+      return showToast('Mã, Tên và SĐT là bắt buộc', 'warning');
     }
-    showToast(editingCustomer ? 'Cập nhật khách hàng thành công!' : 'Thêm khách hàng thành công!', 'success');
-    setOpenDialog(false);
+
+    try {
+      const payload = {
+        ...formData,
+        areaId: formData.areaId ? parseInt(formData.areaId) : null
+      };
+
+      if (editingCustomer) {
+        await customerAPI.update(editingCustomer.id, payload);
+        showToast('Cập nhật khách hàng thành công!', 'success');
+      } else {
+        await customerAPI.create(payload);
+        showToast('Thêm khách hàng thành công!', 'success');
+      }
+      setOpenDialog(false);
+      loadData();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi khi lưu khách hàng', 'error');
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    if (window.confirm('Xác nhận xóa khách hàng này?')) {
+      try {
+        await customerAPI.delete(id);
+        showToast('Đã xóa thành công', 'success');
+        loadData();
+      } catch (error) {
+        showToast('Không thể xóa khách hàng này', 'error');
+      }
+    }
   };
 
   const getTierStyle = (tier: string) => {
     switch(tier) {
       case 'DIAMOND': return { label: 'Kim Cương', color: '#2563eb', bg: '#eff6ff' };
       case 'GOLD': return { label: 'Vàng', color: '#d97706', bg: '#fef3c7' };
-      case 'SILVER': return { label: 'Bạc', color: '#475569', bg: '#f1f5f9' };
-      default: return { label: 'Đồng', color: '#c2410c', bg: '#ffedd5' };
+      default: return { label: 'Bạc', color: '#475569', bg: '#f1f5f9' };
     }
   };
 
-  const filteredCustomers = initialCustomers.filter(c => 
-    c.tenToChuc.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    c.maKH.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    c.dienThoai.includes(searchQuery)
+  const filtered = customers.filter(c => 
+    (c.fullName || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (c.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+    (c.phone || '').includes(searchQuery)
   );
 
   return (
     <Box className="fade-in">
       <Box sx={{ mb: 2 }}>
         <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          QUẢN LÝ KHÁCH HÀNG
+          QUẢN LÝ KHÁCH HÀNG (CRM)
         </Typography>
       </Box>
 
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          {/* TOOLBAR */}
+        <CardContent sx={{ p: 0 }}>
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
-              size="small" placeholder="Tìm: Mã/Tên/Điện thoại" 
+              size="small" placeholder="Tìm tên/mã/SĐT..." 
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
+              sx={{ width: 250, bgcolor: 'white', mr: 1 }}
             />
-            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleToolbarClick('Thêm')} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm</Button>
-            <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xóa</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In</Button>
-            <Button size="small" variant="contained" startIcon={<ImportIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Import</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Excel</Button>
+            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a' }}>Thêm</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be' }}>In</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7' }}>Excel</Button>
           </Box>
 
           <TableContainer>
             <Table sx={{ minWidth: 1200 }}>
               <TableHead>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  {['Khu vực', 'Nhóm', 'Mã KH', 'Tên tổ chức', 'Địa chỉ', 'Điện thoại', 'Email', 'Nhân viên', 'Đặt hàng'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>{col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} /></Box>
-                    </TableCell>
-                  ))}
+                <TableRow sx={{ bgcolor: '#f8fafc' }}>
+                  <TableCell sx={{ fontWeight: 600 }}>No.</TableCell>
+                  <TableCell align="center" sx={{ fontWeight: 600 }}>Thao Tác</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Nhóm</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Mã KH</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Tên Khách Hàng</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Khu Vực</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Điện Thoại</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>Đặt hàng</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredCustomers.map((row, index) => {
-                  const tier = getTierStyle(row.nhom);
+                {loading ? (
+                  <TableRow><TableCell colSpan={8} align="center" sx={{ py: 3 }}><CircularProgress size={24} /></TableCell></TableRow>
+                ) : filtered.map((row, index) => {
+                  const tier = getTierStyle(row.tier || 'SILVER');
                   return (
-                    <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{index + 1}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                        <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                          <Box onClick={() => handleEdit(row)} sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
-                          <Box sx={{ bgcolor: '#f39c12', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><TransferIcon sx={{ fontSize: 14 }} /></Box>
-                        </Box>
+                    <TableRow key={row.id} hover>
+                      <TableCell>{index + 1}</TableCell>
+                      <TableCell align="center">
+                        <IconButton size="small" color="primary" onClick={() => handleOpenDialog(row)}><EditIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" color="error" onClick={() => handleDelete(row.id)}><DeleteIcon fontSize="small" /></IconButton>
                       </TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}>{row.khuVuc}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <Chip icon={<StarsIcon style={{ color: tier.color, fontSize: '16px' }} />} label={tier.label} size="small" sx={{ bgcolor: tier.bg, color: tier.color, fontWeight: 600, borderRadius: 1.5 }} />
+                      <TableCell>
+                        <Chip icon={<StarsIcon style={{ color: tier.color, fontSize: '14px' }} />} label={tier.label} size="small" sx={{ bgcolor: tier.bg, color: tier.color, fontWeight: 600 }} />
                       </TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600 }}>{row.maKH}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a' }}>{row.tenToChuc}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}>{row.diaChi}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}>{row.dienThoai}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}>{row.email}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem' }}>{row.nhanVien}</TableCell>
-                      <TableCell sx={{ borderBottom: '1px solid #f1f5f9' }}>
-                        <Chip label={row.coTheDatHang === '1' ? 'Có' : 'Không'} size="small" sx={{ bgcolor: row.coTheDatHang === '1' ? '#dcfce7' : '#fee2e2', color: row.coTheDatHang === '1' ? '#166534' : '#b91c1c', fontWeight: 600 }} />
+                      <TableCell sx={{ fontWeight: 600, color: '#0284c7' }}>{row.code}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{row.fullName}</TableCell>
+                      <TableCell>{row.areaName || 'Chưa xếp'}</TableCell>
+                      <TableCell>{row.phone}</TableCell>
+                      <TableCell>
+                        <Chip label={row.canPlaceOrder ? 'Có' : 'Khóa'} size="small" color={row.canPlaceOrder ? 'success' : 'error'} />
                       </TableCell>
                     </TableRow>
-                  )
+                  );
                 })}
               </TableBody>
             </Table>
@@ -144,42 +190,38 @@ export const CustomersPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* DIALOG THÊM/SỬA */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9' }}>
-          {editingCustomer ? 'CẬP NHẬT KHÁCH HÀNG' : 'THÊM MỚI KHÁCH HÀNG'}
-        </DialogTitle>
-        <DialogContent sx={{ pt: 3 }}>
-          <Grid container spacing={2}>
-            <Grid item xs={6}><TextField size="small" label="Mã Khách Hàng" fullWidth value={formData.maKH} onChange={(e) => setFormData({...formData, maKH: e.target.value})} /></Grid>
-            <Grid item xs={6}><TextField size="small" label="Tên Khách Hàng / Tổ Chức (*)" fullWidth value={formData.tenToChuc} onChange={(e) => setFormData({...formData, tenToChuc: e.target.value})} required /></Grid>
-            <Grid item xs={6}><TextField size="small" label="Số Điện Thoại (*)" fullWidth value={formData.dienThoai} onChange={(e) => setFormData({...formData, dienThoai: e.target.value})} required /></Grid>
+      {/* DIALOG FORM */}
+      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>{editingCustomer ? 'CẬP NHẬT KHÁCH HÀNG' : 'THÊM KHÁCH HÀNG'}</DialogTitle>
+        <DialogContent sx={{ pt: 2 }}>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={6}><TextField size="small" label="Mã Khách Hàng (*)" fullWidth value={formData.code} onChange={(e) => setFormData({...formData, code: e.target.value.toUpperCase()})} /></Grid>
+            <Grid item xs={6}><TextField size="small" label="Họ Tên / Tổ Chức (*)" fullWidth value={formData.fullName} onChange={(e) => setFormData({...formData, fullName: e.target.value})} /></Grid>
+            <Grid item xs={6}><TextField size="small" label="Số Điện Thoại (*)" fullWidth value={formData.phone} onChange={(e) => setFormData({...formData, phone: e.target.value})} /></Grid>
             <Grid item xs={6}><TextField size="small" label="Email" fullWidth value={formData.email} onChange={(e) => setFormData({...formData, email: e.target.value})} /></Grid>
-            <Grid item xs={12}><TextField size="small" label="Địa Chỉ" fullWidth value={formData.diaChi} onChange={(e) => setFormData({...formData, diaChi: e.target.value})} /></Grid>
-            <Grid item xs={4}>
+            <Grid item xs={12}><TextField size="small" label="Địa Chỉ" fullWidth value={formData.address} onChange={(e) => setFormData({...formData, address: e.target.value})} /></Grid>
+            <Grid item xs={6}>
               <FormControl fullWidth size="small">
-                <InputLabel>Nhóm Khách</InputLabel>
-                <Select value={formData.nhom} label="Nhóm Khách" onChange={(e) => setFormData({...formData, nhom: e.target.value})}>
-                  <MenuItem value="SILVER">Bạc (Silver)</MenuItem>
-                  <MenuItem value="GOLD">Vàng (Gold)</MenuItem>
-                  <MenuItem value="DIAMOND">Kim Cương (Diamond)</MenuItem>
+                <InputLabel>Trực thuộc Khu Vực</InputLabel>
+                <Select value={formData.areaId} label="Trực thuộc Khu Vực" onChange={(e) => setFormData({...formData, areaId: e.target.value})}>
+                  {areas.map(a => <MenuItem key={a.id} value={a.id.toString()}>{a.name}</MenuItem>)}
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={4}>
+            <Grid item xs={6}>
               <FormControl fullWidth size="small">
-                <InputLabel>Có thể đặt hàng</InputLabel>
-                <Select value={formData.coTheDatHang} label="Có thể đặt hàng" onChange={(e) => setFormData({...formData, coTheDatHang: e.target.value})}>
-                  <MenuItem value="1">Được phép</MenuItem>
-                  <MenuItem value="0">Không cho phép</MenuItem>
+                <InputLabel>Quyền đặt hàng</InputLabel>
+                <Select value={formData.canPlaceOrder ? "1" : "0"} label="Quyền đặt hàng" onChange={(e) => setFormData({...formData, canPlaceOrder: e.target.value === "1"})}>
+                  <MenuItem value="1">Cho phép</MenuItem>
+                  <MenuItem value="0">Khóa</MenuItem>
                 </Select>
               </FormControl>
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Button onClick={() => setOpenDialog(false)} sx={{ color: '#64748b' }}>Hủy</Button>
-          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' } }}>Lưu Khách Hàng</Button>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a' }}>Lưu thông tin</Button>
         </DialogActions>
       </Dialog>
     </Box>

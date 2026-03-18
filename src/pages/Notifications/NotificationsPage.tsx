@@ -29,7 +29,7 @@ import {
 import { Notification, NotificationType } from '../../types';
 import { format } from 'date-fns';
 import { useToastStore } from '../../store/toastStore';
-import { notificationAPI, BackendNotification } from '../../api/client';
+
 
 export const NotificationsPage: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);

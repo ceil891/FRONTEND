@@ -1,177 +1,268 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Button, Pagination, Checkbox,
-  Dialog, DialogTitle, DialogContent, DialogActions, Grid
+  TableContainer, TableHead, TableRow, TextField, Button, CircularProgress,
+  FormControl, InputLabel, Select, MenuItem, Chip, Dialog, DialogTitle, 
+  DialogContent, DialogActions, Grid, IconButton // 👉 Thêm IconButton vào đây
 } from '@mui/material';
 import {
-  People as PeopleIcon, Search as SearchIcon, History as HistoryIcon,
-  Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  AccountBalanceWallet as DebtIcon
+  AccountBalanceWallet as DebtIcon,
+  Sync as SyncIcon,
+  History as HistoryIcon,
+  Print as PrintIcon,
+  FileDownload as ExcelIcon,
+  Close as CloseIcon // 👉 Thêm icon đóng cho đẹp
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-
-// Dữ liệu mẫu
-const mockDebts = [
-  { no: 1, id: 'NCC001', name: 'Công ty TNHH Nước Giải Khát', phone: '0988111222', totalDebt: 25000000, lastImport: '01/03/2026', creator: 'Admin' },
-  { no: 2, id: 'NCC002', name: 'Nhà phân phối Trái Cây Miền Tây', phone: '0909333444', totalDebt: 8500000, lastImport: '03/03/2026', creator: 'Kế toán 01' },
-  { no: 3, id: 'NCC003', name: 'Đại lý Bánh Kẹo Hùng Phát', phone: '0977555666', totalDebt: 0, lastImport: '28/02/2026', creator: 'Admin' },
-];
+import { supplierAPI, cashbookAPI, CashbookTransactionResponse } from '../../api/client';
+import dayjs from 'dayjs';
 
 export const SupplierDebtPage: React.FC = () => {
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [openDialog, setOpenDialog] = useState(false);
+
+  // States cho Dialog Thanh toán nợ
+  const [openPayDialog, setOpenPayDialog] = useState(false);
   const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'CASH' | 'BANK_TRANSFER'>('BANK_TRANSFER');
+
+  // States cho Dialog Lịch sử đối soát
+  const [openHistoryDialog, setOpenHistoryDialog] = useState(false);
+  const [historyTransactions, setHistoryTransactions] = useState<CashbookTransactionResponse[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
   const { showToast } = useToastStore();
 
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+  const loadSuppliers = async () => {
+    setLoading(true);
+    try {
+      const res = await supplierAPI.getAll();
+      const data = (res as any).data?.data || res.data || [];
+      setSuppliers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      showToast('Lỗi tải danh sách nhà cung cấp', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadSuppliers(); }, []);
 
   const handleOpenPayment = (supplier: any) => {
     setSelectedSupplier(supplier);
-    setPaymentAmount(supplier.totalDebt.toString());
-    setOpenDialog(true);
+    setPaymentAmount(Math.abs(supplier.debt).toString());
+    setOpenPayDialog(true);
   };
 
-  const handlePayDebt = () => {
-    if (!paymentAmount || Number(paymentAmount) <= 0) {
-      return showToast('Số tiền thanh toán không hợp lệ', 'warning');
+  const handleExecutePay = async () => {
+    if (!paymentAmount || Number(paymentAmount) <= 0) return showToast('Số tiền không hợp lệ', 'warning');
+    try {
+      setLoading(true);
+      await cashbookAPI.paySupplier({
+        supplierId: selectedSupplier.id,
+        amount: Number(paymentAmount),
+        method: paymentMethod,
+        storeId: 1, 
+        creatorId: 1,
+        notes: `Thanh toán nợ cho ${selectedSupplier.name}`
+      });
+      showToast('Đã ghi nhận thanh toán & Sync Google Sheets!', 'success');
+      setOpenPayDialog(false);
+      loadSuppliers();
+    } catch (error: any) {
+      showToast(error.response?.data?.message || 'Lỗi thanh toán', 'error');
+    } finally {
+      setLoading(false);
     }
-    showToast(`Đã ghi nhận thanh toán nợ cho ${selectedSupplier?.name}`, 'success');
-    setOpenDialog(false);
   };
 
-  const totalSystemDebt = mockDebts.reduce((sum, item) => sum + item.totalDebt, 0);
+  const handleViewHistory = async (supplier: any) => {
+    setSelectedSupplier(supplier);
+    setOpenHistoryDialog(true);
+    setLoadingHistory(true);
+    try {
+      // 💡 Gợi ý: Nếu Backend hỗ trợ supplierId thì nên dùng để chính xác tuyệt đối
+      const res = await cashbookAPI.getAll({ search: supplier.name });
+      const data = (res as any).data?.data || res.data || [];
+      setHistoryTransactions(data);
+    } catch (error) {
+      showToast('Lỗi tải lịch sử đối soát', 'error');
+    } finally {
+      setLoadingHistory(false);
+    }
+  };
 
-  const filteredDebts = mockDebts.filter(item => 
-    item.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    item.id.toLowerCase().includes(searchQuery.toLowerCase())
+  const formatCurrency = (val: number) => 
+    new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
+
+  const filteredSuppliers = suppliers.filter(s => 
+    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (s.code && s.code.toLowerCase().includes(searchQuery.toLowerCase()))
   );
+
+  const totalDebt = suppliers.reduce((sum, item) => sum + (item.debt || 0), 0);
 
   return (
     <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          CÔNG NỢ NHÀ CUNG CẤP
-        </Typography>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <Typography variant="h5" sx={{ fontWeight: 700 }}>CÔNG NỢ NHÀ CUNG CẤP</Typography>
+        <Button variant="outlined" startIcon={<SyncIcon />} onClick={loadSuppliers}>Làm mới</Button>
       </Box>
 
-      {/* THẺ TỔNG QUAN */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      <Grid container sx={{ mb: 3 }}>
         <Grid item xs={12} md={4}>
-          <Card sx={{ borderRadius: 2, bgcolor: '#fef2f2', border: '1px solid #fecaca', boxShadow: 'none' }}>
-            <CardContent sx={{ p: 2, '&:last-child': { pb: 2 } }}>
-              <Typography variant="body2" color="#991b1b" fontWeight={600} sx={{ textTransform: 'uppercase' }}>Tổng Nợ Cần Trả Hiện Tại</Typography>
-              <Typography variant="h4" color="#dc2626" fontWeight={800} sx={{ mt: 1 }}>{formatCurrency(totalSystemDebt)}</Typography>
+          <Card sx={{ bgcolor: '#fef2f2', border: '1px solid #fecaca', borderRadius: 2 }}>
+            <CardContent>
+              <Typography variant="body2" color="error" fontWeight={600}>TỔNG NỢ CẦN TRẢ HIỆN TẠI</Typography>
+              <Typography variant="h4" color="#dc2626" fontWeight={800} sx={{ mt: 1 }}>
+                {formatCurrency(totalDebt)}
+              </Typography>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* BẢNG CHUẨN RIC */}
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          {/* THANH TOOLBAR */}
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Mã NCC/Tên NCC..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 280, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Báo Cáo</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-          </Box>
+      <Card sx={{ borderRadius: 2, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
+        <Box sx={{ p: 2, display: 'flex', gap: 1, borderBottom: '1px solid #f1f5f9' }}>
+          <TextField 
+            size="small" placeholder="Mã NCC / Tên NCC..." 
+            sx={{ width: 300 }} 
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+          <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be' }}>In Báo Cáo</Button>
+          <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7' }}>Xuất Excel</Button>
+        </Box>
 
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer>
-            <Table sx={{ minWidth: 1000 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  
-                  {['Mã NCC', 'Tên Nhà Cung Cấp', 'Điện Thoại', 'Lần Nhập Gần Nhất', 'Dư Nợ Hiện Tại', 'Nhân Viên Phụ Trách'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
+        <TableContainer>
+          <Table>
+            <TableHead sx={{ bgcolor: '#f8fafc' }}>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 700 }}>Mã NCC</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Tên Nhà Cung Cấp</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Điện Thoại</TableCell>
+                <TableCell align="right" sx={{ fontWeight: 700 }}>Dư Nợ Hiện Tại</TableCell>
+                <TableCell align="center" sx={{ fontWeight: 700 }}>Thao Tác</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {loading ? (
+                <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5 }}><CircularProgress size={24} /></TableCell></TableRow>
+              ) : filteredSuppliers.length === 0 ? (
+                <TableRow><TableCell colSpan={5} align="center" sx={{ py: 5 }}>Không tìm thấy NCC nào</TableCell></TableRow>
+              ) : filteredSuppliers.map((row) => (
+                <TableRow key={row.id} hover>
+                  <TableCell>{row.code || 'NCC' + row.id}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{row.name}</TableCell>
+                  <TableCell>{row.phone}</TableCell>
+                  <TableCell align="right" sx={{ 
+                    fontWeight: 800, 
+                    color: row.debt < 0 ? '#dc2626' : '#16a34a' 
+                  }}>
+                    {formatCurrency(row.debt)}
+                  </TableCell>
+                  <TableCell align="center">
+                    <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
+                      <Button 
+                        size="small" variant="contained" color="warning" 
+                        disabled={row.debt === 0}
+                        onClick={() => handleOpenPayment(row)}
+                        sx={{ minWidth: 80, textTransform: 'none' }}
+                      >
+                        Trả Nợ
+                      </Button>
+                      <Button 
+                        size="small" variant="outlined" 
+                        startIcon={<HistoryIcon />}
+                        onClick={() => handleViewHistory(row)}
+                        sx={{ minWidth: 80, textTransform: 'none' }}
+                      >
+                        Lịch sử
+                      </Button>
+                    </Box>
+                  </TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {filteredDebts.map((row) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    
-                    {/* Cột Thao tác kiểu Nút vuông */}
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                        <Box title="Lịch sử giao dịch" sx={{ bgcolor: '#0284c7', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><HistoryIcon sx={{ fontSize: 14 }} /></Box>
-                        {row.totalDebt > 0 && (
-                          <Box title="Thanh toán nợ" onClick={() => handleOpenPayment(row)} sx={{ bgcolor: '#f39c12', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><DebtIcon sx={{ fontSize: 14 }} /></Box>
-                        )}
-                      </Box>
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{row.id}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 700, p: 1.5 }}>{row.name}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.phone}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.lastImport}</TableCell>
-                    
-                    {/* Dư nợ màu đỏ */}
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: row.totalDebt > 0 ? '#dc2626' : '#16a34a', p: 1.5 }}>
-                      {formatCurrency(row.totalDebt)}
-                    </TableCell>
-
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.creator}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {filteredDebts.length} of {filteredDebts.length} items</Typography>
-          </Box>
-        </CardContent>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Card>
 
-      {/* DIALOG THANH TOÁN NỢ */}
-      <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 2 } }}>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #f1f5f9', pb: 2 }}>THANH TOÁN CÔNG NỢ</DialogTitle>
-        <DialogContent sx={{ pt: '24px !important' }}>
-          {selectedSupplier && (
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 2, border: '1px dashed #cbd5e1' }}>
-                <Typography variant="body2" color="text.secondary">Tên đối tác:</Typography>
-                <Typography variant="h6" fontWeight={700} sx={{ mb: 1, color: '#0f172a' }}>{selectedSupplier.name}</Typography>
-                <Typography variant="body2" color="text.secondary">Dư nợ hiện tại (Cần thanh toán):</Typography>
-                <Typography variant="h5" color="#dc2626" fontWeight={800}>{formatCurrency(selectedSupplier.totalDebt)}</Typography>
-              </Box>
-              
-              <TextField 
-                size="small" label="Số tiền trả (VNĐ) (*)" type="number" fullWidth 
-                value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)} 
-                autoFocus
-              />
-              <TextField size="small" label="Ghi chú thanh toán" fullWidth multiline rows={3} placeholder="VD: CK trả nợ đợt 1..." />
-            </Box>
+      <Dialog open={openPayDialog} onClose={() => setOpenPayDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700 }}>XÁC NHẬN THANH TOÁN</DialogTitle>
+        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <Box sx={{ bgcolor: '#f8fafc', p: 2, borderRadius: 1, border: '1px dashed #cbd5e1' }}>
+             <Typography variant="caption">Nhà cung cấp: <b>{selectedSupplier?.name}</b></Typography>
+             <Typography variant="h6" color="error" fontWeight={800} sx={{mt: 0.5}}>{formatCurrency(selectedSupplier?.debt)}</Typography>
+          </Box>
+          <TextField 
+            label="Số tiền thanh toán" type="number" fullWidth autoFocus size="small" sx={{mt: 1}}
+            value={paymentAmount} onChange={(e) => setPaymentAmount(e.target.value)}
+          />
+          <FormControl fullWidth size="small">
+            <InputLabel>Phương thức</InputLabel>
+            <Select value={paymentMethod} label="Phương thức" onChange={(e:any) => setPaymentMethod(e.target.value)}>
+              <MenuItem value="BANK_TRANSFER">Chuyển khoản</MenuItem>
+              <MenuItem value="CASH">Tiền mặt</MenuItem>
+            </Select>
+          </FormControl>
+        </DialogContent>
+        <DialogActions sx={{px: 3, pb: 2}}>
+          <Button onClick={() => setOpenPayDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleExecutePay} disabled={loading}>Xác Nhận Trả</Button>
+        </DialogActions>
+      </Dialog>
+
+      <Dialog open={openHistoryDialog} onClose={() => setOpenHistoryDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          LỊCH SỬ GIAO DỊCH: {selectedSupplier?.name}
+          <IconButton onClick={() => setOpenHistoryDialog(false)} size="small">
+            <CloseIcon />
+          </IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {loadingHistory ? (
+            <Box sx={{ textAlign: 'center', py: 5 }}><CircularProgress /></Box>
+          ) : (
+            <TableContainer>
+              <Table size="small">
+                <TableHead sx={{ bgcolor: '#f1f5f9' }}>
+                  <TableRow>
+                    <TableCell sx={{fontWeight: 700}}>Ngày giờ</TableCell>
+                    <TableCell sx={{fontWeight: 700}}>Mã phiếu</TableCell>
+                    <TableCell sx={{fontWeight: 700}}>Loại giao dịch</TableCell>
+                    <TableCell align="right" sx={{fontWeight: 700}}>Số tiền</TableCell>
+                    <TableCell sx={{fontWeight: 700}}>Ghi chú</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {historyTransactions.length === 0 ? (
+                    <TableRow><TableCell colSpan={5} align="center" sx={{py: 3}}>Chưa có giao dịch nào với đối tác này</TableCell></TableRow>
+                  ) : historyTransactions.map((tx) => (
+                    <TableRow key={tx.id}>
+                      <TableCell>{dayjs(tx.transactionDate).format('DD/MM/YYYY HH:mm')}</TableCell>
+                      <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{tx.code}</TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={tx.type === 'INCOME' ? 'Nợ tăng' : 'Trả tiền'} 
+                          size="small" 
+                          color={tx.type === 'INCOME' ? 'error' : 'success'} 
+                          variant="outlined"
+                        />
+                      </TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(tx.amount)}</TableCell>
+                      <TableCell sx={{ fontSize: '0.8rem', color: 'text.secondary' }}>{tx.description}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #f1f5f9' }}>
-          <Button onClick={() => setOpenDialog(false)} sx={{ textTransform: 'none', color: '#64748b' }}>Hủy Bỏ</Button>
-          <Button variant="contained" onClick={handlePayDebt} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>
-            Xác Nhận Trả Nợ
-          </Button>
+        <DialogActions sx={{p: 2}}>
+          <Button onClick={() => setOpenHistoryDialog(false)} variant="contained" sx={{px: 4}}>Đóng</Button>
         </DialogActions>
       </Dialog>
     </Box>

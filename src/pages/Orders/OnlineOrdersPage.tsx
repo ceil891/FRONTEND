@@ -10,12 +10,29 @@ import {
   Visibility as ViewIcon, CheckCircle as ApproveIcon,
   LocalShipping as ShippingIcon
 } from '@mui/icons-material';
-import { orderAPI, type BackendHoaDonDTO } from '../../api/client';
+
+// 👉 1. IMPORT API VÀ TOAST TỪ PROJECT CỦA BẠN
+import { orderAPI } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
+
+// 👉 2. KHAI BÁO TYPE ĐỂ TYPESCRIPT KHÔNG BÁO LỖI (Sử dụng lại type đã định nghĩa nếu có)
+export interface BackendHoaDonDTO {
+  hoaDonId: number;
+  maHoaDon?: string;
+  ngayLap: string | Date;
+  tenKhachHang?: string;
+  dienThoaiKhachHang?: string;
+  tongPhaiThanhToan?: number;
+  kenhBan?: string;
+  trangThai?: string;
+}
 
 export const OnlineOrdersPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [rows, setRows] = useState<BackendHoaDonDTO[]>([]);
   const [loading, setLoading] = useState(false);
+  const { showToast } = useToastStore();
+
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   const filtered = useMemo(() => {
@@ -28,45 +45,67 @@ export const OnlineOrdersPage: React.FC = () => {
     );
   }, [rows, searchQuery]);
 
+  // 👉 3. GỌI API LẤY DANH SÁCH ĐƠN ONLINE KHI MỞ TRANG
   useEffect(() => {
     let mounted = true;
     setLoading(true);
-    orderAPI
-      .query({ channel: 'ONLINE' })
+    
+    orderAPI.query({ channel: 'ONLINE' }) // Lọc theo kênh bán ONLINE
       .then((res) => {
         if (!mounted) return;
-        setRows(res.data ?? []);
+        // Bóc tách dữ liệu an toàn, tuỳ theo cấu trúc BaseResponse của bạn (thường là res.data.data)
+        const dataList = res.data.data || res.data || [];
+        setRows(dataList);
+      })
+      .catch((err) => {
+        if (mounted) showToast('Lỗi khi tải danh sách đơn Online', 'error');
+        console.error("Lỗi tải đơn Online:", err);
       })
       .finally(() => {
-        if (!mounted) return;
-        setLoading(false);
+        if (mounted) setLoading(false);
       });
+      
     return () => {
       mounted = false;
     };
-  }, []);
+  }, [showToast]);
 
+  // 👉 4. GỌI API XUẤT EXCEL
   const downloadExcel = async () => {
-    const res = await orderAPI.exportExcel({ channel: 'ONLINE', keyword: searchQuery.trim() || undefined });
-    const blob = new Blob([res.data], {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'don_online.xlsx';
-    a.click();
-    window.URL.revokeObjectURL(url);
+    try {
+      showToast('Đang tạo file Excel...', 'info');
+      const res = await orderAPI.exportExcel({ channel: 'ONLINE', keyword: searchQuery.trim() || undefined });
+      
+      const blob = new Blob([res.data], {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `don_online_${new Date().getTime()}.xlsx`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      
+      showToast('Tải Excel thành công!', 'success');
+    } catch (error) {
+      showToast('Lỗi khi xuất file Excel', 'error');
+    }
   };
 
   // Render màu sắc Chip trạng thái
   const getStatusChip = (status: string) => {
-    switch (status) {
-      case 'Chờ duyệt': return <Chip label={status} size="small" sx={{ bgcolor: '#fef08a', color: '#854d0e', fontWeight: 600, borderRadius: 1 }} />;
-      case 'Đang giao': return <Chip label={status} size="small" sx={{ bgcolor: '#e0f2fe', color: '#075985', fontWeight: 600, borderRadius: 1 }} />;
-      case 'Thành công': return <Chip label={status} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, borderRadius: 1 }} />;
-      default: return <Chip label={status} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600, borderRadius: 1 }} />;
+    // Đưa về chữ hoa hoặc thường để so sánh cho chính xác (Tuỳ DB của bạn lưu tiếng Việt hay Tiếng Anh)
+    const s = status.toUpperCase();
+    if (s.includes('CHỜ DUYỆT') || s === 'PENDING') {
+        return <Chip label={status} size="small" sx={{ bgcolor: '#fef08a', color: '#854d0e', fontWeight: 600, borderRadius: 1 }} />;
     }
+    if (s.includes('ĐANG GIAO') || s === 'SHIPPING') {
+        return <Chip label={status} size="small" sx={{ bgcolor: '#e0f2fe', color: '#075985', fontWeight: 600, borderRadius: 1 }} />;
+    }
+    if (s.includes('THÀNH CÔNG') || s === 'COMPLETED') {
+        return <Chip label={status} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, borderRadius: 1 }} />;
+    }
+    return <Chip label={status} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600, borderRadius: 1 }} />;
   };
 
   return (

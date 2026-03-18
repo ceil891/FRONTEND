@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Button, IconButton, TextField,
@@ -10,30 +10,44 @@ import {
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
 
-// Dữ liệu mẫu (Thay bằng API sau)
-const mockColors = [
-  { id: 1, name: 'Đỏ', hexCode: '#FF0000', isActive: true },
-  { id: 2, name: 'Đen', hexCode: '#000000', isActive: true },
-  { id: 3, name: 'Trắng', hexCode: '#FFFFFF', isActive: true },
-];
+// IMPORT API VÀ TYPES
+import { colorAPI } from '../../api/client';
+import { BackendColor } from '../../types/api.types';
 
 export const ColorPage: React.FC = () => {
-  const [colors, setColors] = useState(mockColors);
+  // Đổi thành state rỗng
+  const [colors, setColors] = useState<BackendColor[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [openDialog, setOpenDialog] = useState(false);
-  const [editingItem, setEditingItem] = useState<any>(null);
+  const [editingItem, setEditingItem] = useState<BackendColor | null>(null);
   
   const [formData, setFormData] = useState({ name: '', hexCode: '#000000', isActive: true });
   
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
+  // Load danh sách màu sắc từ Backend
+  const fetchColors = async () => {
+    try {
+      const res = await colorAPI.getAll();
+      const responseData = res.data as any;
+      const items = Array.isArray(responseData) ? responseData : (responseData?.data || []);
+      setColors(items);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi tải danh sách màu sắc', 'error');
+    }
+  };
+
+  useEffect(() => {
+    fetchColors();
+  }, []);
+
   const filteredColors = colors.filter(c => c.name.toLowerCase().includes(searchQuery.toLowerCase()));
 
-  const handleOpenDialog = (item?: any) => {
+  const handleOpenDialog = (item?: BackendColor) => {
     if (item) {
       setEditingItem(item);
-      setFormData({ name: item.name, hexCode: item.hexCode, isActive: item.isActive });
+      setFormData({ name: item.name, hexCode: item.hexCode, isActive: item.status === 'ACTIVE' });
     } else {
       setEditingItem(null);
       setFormData({ name: '', hexCode: '#000000', isActive: true });
@@ -41,19 +55,39 @@ export const ColorPage: React.FC = () => {
     setOpenDialog(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.name.trim()) return showToast('Vui lòng nhập tên màu', 'warning');
     
-    // TODO: Gọi API Create/Update ở đây
-    showToast(editingItem ? 'Cập nhật thành công' : 'Tạo mới thành công', 'success');
-    setOpenDialog(false);
+    const payload = {
+      name: formData.name,
+      hexCode: formData.hexCode,
+      status: formData.isActive ? 'ACTIVE' : 'INACTIVE'
+    };
+
+    try {
+      if (editingItem) {
+        await colorAPI.update(editingItem.id, payload);
+        showToast('Cập nhật thành công', 'success');
+      } else {
+        await colorAPI.create(payload);
+        showToast('Tạo mới thành công', 'success');
+      }
+      setOpenDialog(false);
+      fetchColors(); // Load lại data
+    } catch (error: any) {
+      showToast(error.message || 'Có lỗi xảy ra khi lưu', 'error');
+    }
   };
 
-  const handleDelete = (id: number) => {
+  const handleDelete = async (id: number) => {
     if (window.confirm('Chắc chắn muốn xóa màu này?')) {
-      // TODO: Gọi API Delete ở đây
-      setColors(colors.filter(c => c.id !== id));
-      showToast('Đã xóa thành công', 'success');
+      try {
+        await colorAPI.delete(id);
+        showToast('Đã xóa thành công', 'success');
+        fetchColors(); // Load lại data
+      } catch (error: any) {
+        showToast(error.message || 'Lỗi khi xóa màu sắc', 'error');
+      }
     }
   };
 
@@ -104,7 +138,7 @@ export const ColorPage: React.FC = () => {
                       </Box>
                     </TableCell>
                     <TableCell>
-                      <Chip label={row.isActive ? 'Hoạt động' : 'Ngừng'} size="small" color={row.isActive ? 'success' : 'default'} />
+                      <Chip label={row.status === 'ACTIVE' ? 'Hoạt động' : 'Ngừng'} size="small" color={row.status === 'ACTIVE' ? 'success' : 'default'} />
                     </TableCell>
                     {isSuperAdmin() && (
                       <TableCell align="right">
@@ -114,6 +148,14 @@ export const ColorPage: React.FC = () => {
                     )}
                   </TableRow>
                 ))}
+                
+                {filteredColors.length === 0 && (
+                   <TableRow>
+                     <TableCell colSpan={5} align="center" sx={{ py: 3, color: 'text.secondary' }}>
+                        Chưa có dữ liệu màu sắc
+                     </TableCell>
+                   </TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
@@ -121,7 +163,6 @@ export const ColorPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Dialog Thêm/Sửa */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>{editingItem ? 'SỬA MÀU SẮC' : 'THÊM MÀU SẮC'}</DialogTitle>
         <DialogContent sx={{ pt: '20px !important', display: 'flex', flexDirection: 'column', gap: 2 }}>

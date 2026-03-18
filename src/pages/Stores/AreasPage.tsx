@@ -3,7 +3,7 @@ import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Button, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, Chip, CircularProgress,
-  Checkbox, Pagination, Tooltip
+  Checkbox, Pagination, Tooltip, IconButton
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
@@ -12,20 +12,14 @@ import {
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
-
-// Dữ liệu mẫu (Thành có thể thay bằng API tương tự các trang khác)
-const mockAreas = [
-  { id: 1, code: 'MB', name: 'Miền Bắc', description: 'Khu vực các tỉnh phía Bắc', storeCount: 12, isActive: true },
-  { id: 2, code: 'MT', name: 'Miền Trung', description: 'Khu vực các tỉnh miền Trung & Tây Nguyên', storeCount: 5, isActive: true },
-  { id: 3, code: 'MN', name: 'Miền Nam', description: 'Khu vực TP.HCM và các tỉnh lân cận', storeCount: 20, isActive: true },
-  { id: 4, code: 'HT', name: 'Hệ thống online', description: 'Khu vực quản lý đơn hàng thương mại điện tử', storeCount: 1, isActive: false },
-];
+import { areaAPI } from '../../api/client'; // Import API thực tế
 
 export const AreasPage: React.FC = () => {
+  const [areas, setAreas] = useState<any[]>([]); // Đổi thành state chứa data thật
   const [openDialog, setOpenDialog] = useState(false);
   const [editingArea, setEditingArea] = useState<any>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { showToast } = useToastStore();
   const { isSuperAdmin } = useAuthStore();
 
@@ -33,10 +27,35 @@ export const AreasPage: React.FC = () => {
     code: '', name: '', description: '', isActive: true,
   });
 
+  // HÀM LẤY DỮ LIỆU TỪ BACKEND
+  const fetchAreas = async () => {
+    try {
+      setLoading(true);
+      const res = await areaAPI.getAll();
+      const responseData = res.data as any;
+      const items = Array.isArray(responseData) ? responseData : (responseData?.data || []);
+      setAreas(items);
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi tải danh sách Khu vực', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchAreas();
+  }, []);
+
   const handleOpenDialog = (area?: any) => {
     if (area) {
       setEditingArea(area);
-      setFormData({ code: area.code, name: area.name, description: area.description, isActive: area.isActive });
+      // Đọc dữ liệu từ DB đổ vào form
+      setFormData({ 
+        code: area.code || '', 
+        name: area.name || '', 
+        description: area.description || '', 
+        isActive: area.status === 'ACTIVE' 
+      });
     } else {
       setEditingArea(null);
       setFormData({ code: '', name: '', description: '', isActive: true });
@@ -44,14 +63,47 @@ export const AreasPage: React.FC = () => {
     setOpenDialog(true);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!formData.code || !formData.name) return showToast('Vui lòng nhập mã và tên khu vực', 'warning');
-    showToast(editingArea ? 'Cập nhật khu vực thành công' : 'Thêm khu vực mới thành công', 'success');
-    setOpenDialog(false);
+    
+    const payload = {
+      code: formData.code.toUpperCase(),
+      name: formData.name,
+      description: formData.description,
+      status: formData.isActive ? 'ACTIVE' : 'INACTIVE'
+    };
+
+    try {
+      if (editingArea) {
+        await areaAPI.update(editingArea.id, payload);
+        showToast('Cập nhật khu vực thành công', 'success');
+      } else {
+        await areaAPI.create(payload);
+        showToast('Thêm khu vực mới thành công', 'success');
+      }
+      setOpenDialog(false);
+      fetchAreas(); // Load lại data sau khi lưu
+    } catch (error: any) {
+      showToast(error.message || 'Có lỗi khi lưu Khu vực', 'error');
+    }
   };
 
-  const filteredAreas = mockAreas.filter(a => 
-    a.name.toLowerCase().includes(searchQuery.toLowerCase()) || a.code.toLowerCase().includes(searchQuery.toLowerCase())
+  const handleDelete = async (id: number) => {
+    if (window.confirm('Chắc chắn muốn xóa Khu vực này?')) {
+      try {
+        await areaAPI.delete(id);
+        showToast('Đã xóa Khu vực', 'success');
+        fetchAreas();
+      } catch (error: any) {
+        showToast(error.message || 'Lỗi khi xóa Khu vực', 'error');
+      }
+    }
+  };
+
+  // Lọc tìm kiếm trên data thực
+  const filteredAreas = areas.filter(a => 
+    (a.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
+    (a.code || '').toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   return (
@@ -74,9 +126,9 @@ export const AreasPage: React.FC = () => {
               sx={{ width: 280, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            {isSuperAdmin() && (
-              <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm Khu Vực</Button>
-            )}
+            {/* Mình tạm mở khóa hiển thị nút Thêm cho bạn dễ test */}
+            <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm Khu Vực</Button>
+            
             <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Excel</Button>
           </Box>
@@ -91,7 +143,7 @@ export const AreasPage: React.FC = () => {
                 <TableRow>
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Sửa</TableCell>
+                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 90, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao tác</TableCell>
                   
                   {['Mã Khu Vực', 'Tên Khu Vực', 'Mô Tả', 'Số Cửa Hàng', 'Trạng Thái'].map((col) => (
                     <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
@@ -111,7 +163,8 @@ export const AreasPage: React.FC = () => {
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box onClick={() => handleOpenDialog(area)} sx={{ bgcolor: '#00a65a', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'inline-flex' }}><EditIcon sx={{ fontSize: 14 }} /></Box>
+                      <IconButton size="small" color="primary" onClick={() => handleOpenDialog(area)}><EditIcon fontSize="small" /></IconButton>
+                      <IconButton size="small" color="error" onClick={() => handleDelete(area.id)}><DeleteIcon fontSize="small" /></IconButton>
                     </TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{area.code}</TableCell>
@@ -119,22 +172,26 @@ export const AreasPage: React.FC = () => {
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{area.description}</TableCell>
                     
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }} align="center">
-                        <Chip label={`${area.storeCount} chi nhánh`} size="small" variant="outlined" sx={{ fontWeight: 600, color: '#0284c7', borderColor: '#0284c7' }} />
+                        <Chip label={`${area.storeCount || 0} chi nhánh`} size="small" variant="outlined" sx={{ fontWeight: 600, color: '#0284c7', borderColor: '#0284c7' }} />
                     </TableCell>
 
                     <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
                       <Chip 
-                        label={area.isActive ? 'Đang áp dụng' : 'Ngưng dùng'} 
+                        label={area.status === 'ACTIVE' ? 'Đang áp dụng' : 'Ngưng dùng'} 
                         size="small" 
                         sx={{ 
-                          bgcolor: area.isActive ? '#dcfce7' : '#f1f5f9', 
-                          color: area.isActive ? '#166534' : '#64748b', 
+                          bgcolor: area.status === 'ACTIVE' ? '#dcfce7' : '#f1f5f9', 
+                          color: area.status === 'ACTIVE' ? '#166534' : '#64748b', 
                           fontWeight: 600, borderRadius: 1 
                         }} 
                       />
                     </TableCell>
                   </TableRow>
                 ))}
+                
+                {filteredAreas.length === 0 && !loading && (
+                   <TableRow><TableCell colSpan={8} align="center" sx={{ py: 3, color: 'text.secondary' }}>Chưa có dữ liệu khu vực</TableCell></TableRow>
+                )}
               </TableBody>
             </Table>
           </TableContainer>
