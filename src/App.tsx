@@ -9,7 +9,7 @@ import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { POSPage } from './pages/POS/POSPage';
 import { OrdersPage } from './pages/Orders/OrdersPage';
 import { InventoryPage } from './pages/Inventory/InventoryPage';
-//import { ProductsPage } from './pages/Products/ProductsPage';
+import { ProductsPage } from './pages/Products/ProductsPage';
 import { CategoriesPage } from './pages/Categories/CategoriesPage';
 import { PromotionsPage } from './pages/Promotions/PromotionsPage';
 import { WorkShiftsPage } from './pages/WorkShifts/WorkShiftsPage';
@@ -92,7 +92,7 @@ function App() {
             <Route path="orders/cancelled" element={<CancelledOrdersPage />} />
 
             {/* Hàng hóa & Sản phẩm */}
-           {/* <Route path="products" element={<ProductsPage />} />*/}
+            <Route path="products" element={<ProductsPage />} /> 
             <Route path="categories" element={<CategoriesPage />} />
             <Route path="colors" element={<ColorPage />} />
             <Route path="sizes" element={<SizePage />} />

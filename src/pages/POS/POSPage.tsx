@@ -6,17 +6,17 @@ import {
 } from '@mui/material';
 import {
   Add as AddIcon, Remove as RemoveIcon, Delete as DeleteIcon, Search as SearchIcon,
-  Print as PrintIcon, Payment as PaymentIcon, Storefront as StoreIcon, ArrowBack as ArrowBackIcon
+  Print as PrintIcon, Payment as PaymentIcon, Storefront as StoreIcon, ArrowBack as ArrowBackIcon,
+  AccountCircle as AccountIcon
 } from '@mui/icons-material';
 import { Product, OrderDetail, PaymentMethod, Promotion } from '../../types';
 import { useToastStore } from '../../store/toastStore';
 
 import { generateReceiptHTML } from '../../utils/receiptTemplate';
 import { useAuthStore } from '../../store/authStore';
-// Đảm bảo import đúng các API từ file client.ts của bạn
-import { storeAPI, productAPI, orderAPI } from '../../api/client'; 
 
-// Cập nhật Type cho BackendStore nếu chưa có
+import { storeAPI, productAPI, orderAPI, loyaltyAPI } from '../../api/client'; 
+
 interface BackendStore {
   id: number;
   name: string;
@@ -24,62 +24,89 @@ interface BackendStore {
 }
 
 export const POSPage: React.FC = () => {
-  // --- STATE QUẢN LÝ CỬA HÀNG ---
   const [stores, setStores] = useState<BackendStore[]>([]);
   const [selectedStore, setSelectedStore] = useState<BackendStore | null>(null);
 
-  // --- STATE POS ---
   const [searchQuery, setSearchQuery] = useState('');
-  const [cart, setCart] = useState<OrderDetail[]>([]);
+  const [cart, setCart] = useState<any[]>([]); 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
+  
+  // 🟢 THÊM STATE TIỀN KHÁCH ĐƯA 🟢
+  const [customerCash, setCustomerCash] = useState<number | ''>('');
+
   const [promoCode, setPromoCode] = useState('');
   const [appliedPromotion, setAppliedPromotion] = useState<Promotion | null>(null);
   
-  // STATE ĐÓNG/MỞ POPUP QR
   const [openQRDialog, setOpenQRDialog] = useState(false);
+  
+  const [variantDialogOpen, setVariantDialogOpen] = useState(false);
+  const [currentProduct, setCurrentProduct] = useState<any>(null);
 
-  const [products, setProducts] = useState<Product[]>([]);
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
+  const [pointsToUse, setPointsToUse] = useState<number>(0);
+  const [loyaltyConfig, setLoyaltyConfig] = useState({ exchangeRateEarn: 100000, exchangeRateRedeem: 100 });
+
+  const [products, setProducts] = useState<any[]>([]); 
   const [loading, setLoading] = useState(false);
   const { showToast } = useToastStore();
   const { user } = useAuthStore();
 
-  const mapBackendToProduct = (sp: any): Product => {
+  const getProductImage = (p: any) => {
+    if (!p) return 'https://via.placeholder.com/150?text=No+Image';
+    const urls = p.imageUrls || p.hinhAnhUrls || p.images;
+    if (Array.isArray(urls) && urls.length > 0) return urls[0];
+    if (typeof urls === 'string') {
+      if (urls.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(urls);
+          return parsed.length > 0 ? parsed[0] : 'https://via.placeholder.com/150?text=No+Image';
+        } catch (e) { return 'https://via.placeholder.com/150?text=No+Image'; }
+      }
+      return urls;
+    }
+    return p.imageUrl || p.hinhAnhUrl || p.image || 'https://via.placeholder.com/150?text=No+Image';
+  };
+
+  const mapBackendToProduct = (sp: any) => {
     return {
-      id: String(sp.sanPhamId || sp.id),
-      code: sp.maSku || sp.code,
-      name: sp.tenSanPham || sp.name,
-      price: Number(sp.giaBan ?? sp.price ?? 0),
-      unit: 'Cái', 
-      categoryId: sp.danhMuc ? sp.danhMuc.id : null,
-      isActive: sp.hoatDong !== false && sp.isActive !== false,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      ...({ 
-          donViId: sp.donViId || 1,
-          hinhAnhUrls: sp.hinhAnhUrls || []
-      }) 
+      ...sp, 
+      id: String(sp.id || sp.sanPhamId),
+      code: sp.code || sp.maSku,
+      name: sp.name || sp.tenSanPham,
+      price: Number(sp.baseRetailPrice ?? sp.giaBan ?? sp.price ?? 0),
+      unit: sp.unitName || 'Cái', 
+      categoryId: sp.categoryId || (sp.danhMuc ? sp.danhMuc.id : null),
+      isActive: sp.status === 'ACTIVE' || sp.hoatDong !== false,
+      variants: sp.variants || [], 
+      imageUrls: sp.imageUrls || sp.hinhAnhUrls || [] 
     };
   };
 
-  // Tải dữ liệu Cửa hàng và Sản phẩm khi vừa vào trang
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [storeRes, prodRes] = await Promise.all([
-        storeAPI.getAll(),
-        productAPI.getAll()
+      const [storeRes, prodRes, configRes] = await Promise.all([
+        storeAPI.getAll().catch(() => ({ data: { data: [] } })),
+        productAPI.getAll().catch(() => ({ data: [] })),
+        loyaltyAPI.getConfig().catch(() => null)
       ]);
       
-      const listStores = storeRes.data?.data || [];
-      setStores(listStores);
+      setStores(storeRes.data?.data || []);
+
+      if (configRes?.data?.success && configRes.data.data) {
+        setLoyaltyConfig({
+          exchangeRateEarn: configRes.data.data.exchangeRateEarn || 100000,
+          exchangeRateRedeem: configRes.data.data.exchangeRateRedeem || 100
+        });
+      }
 
       let listSP: any[] = [];
       const rawProd = prodRes.data;
       if (Array.isArray(rawProd)) listSP = rawProd;
       else if (rawProd && typeof rawProd === 'object') listSP = (rawProd as any).data || (rawProd as any).content || [];
 
-      const activeProducts = listSP.map(mapBackendToProduct).filter(p => p.isActive);
-      setProducts(activeProducts);
+      setProducts(listSP.map(mapBackendToProduct).filter(p => p.isActive));
 
     } catch (err) {
       showToast('Lỗi tải dữ liệu hệ thống', 'error');
@@ -88,29 +115,33 @@ export const POSPage: React.FC = () => {
     }
   };
 
-  useEffect(() => {
-    void loadInitialData();
-  }, []);
+  useEffect(() => { void loadInitialData(); }, []);
 
   const mockPromotions: Promotion[] = [
     { id: '1', code: 'GIAM10', name: 'Giảm 10%', discountType: 'PERCENTAGE', discountValue: 10, minPurchase: 100000, maxDiscount: 50000, startDate: new Date(), endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isActive: true, createdAt: new Date(), updatedAt: new Date() },
   ];
 
-  // ==========================================
-  // TỐI ƯU HIỆU NĂNG VỚI useMemo
-  // ==========================================
-  
-  // 1. Chỉ lọc lại sản phẩm khi products hoặc searchQuery thay đổi
+  const handleFindCustomer = async () => {
+    if (!customerPhone.trim()) return showToast('Vui lòng nhập SĐT', 'warning');
+    setLoading(true);
+    try {
+      const res = await loyaltyAPI.getMembers(customerPhone);
+      const members = res.data?.data || [];
+      if (members.length > 0) {
+        setSelectedCustomer(members[0]);
+        setPointsToUse(0);
+        showToast(`Đã áp dụng khách: ${members[0].fullName}`, 'success');
+      } else { showToast('Không tìm thấy hội viên!', 'warning'); }
+    } catch (error) { showToast('Lỗi tra cứu hội viên', 'error'); } 
+    finally { setLoading(false); }
+  };
+
   const filteredProducts = useMemo(() => {
     if (!searchQuery.trim()) return products;
     const lowerQuery = searchQuery.toLowerCase();
-    return products.filter(p =>
-      p.name.toLowerCase().includes(lowerQuery) || 
-      p.code.toLowerCase().includes(lowerQuery)
-    );
+    return products.filter(p => p.name.toLowerCase().includes(lowerQuery) || p.code.toLowerCase().includes(lowerQuery));
   }, [products, searchQuery]);
 
-  // 2. Chỉ tính lại tiền khi giỏ hàng hoặc khuyến mãi thay đổi
   const { subtotal, discount, total } = useMemo(() => {
     const calcSubtotal = cart.reduce((sum, item) => sum + item.total, 0);
     let calcDiscount = 0;
@@ -118,47 +149,51 @@ export const POSPage: React.FC = () => {
     if (appliedPromotion) {
       if (appliedPromotion.discountType === 'PERCENTAGE') {
         calcDiscount = (calcSubtotal * appliedPromotion.discountValue) / 100;
-        if (appliedPromotion.maxDiscount && calcDiscount > appliedPromotion.maxDiscount) {
-          calcDiscount = appliedPromotion.maxDiscount;
-        }
+        if (appliedPromotion.maxDiscount && calcDiscount > appliedPromotion.maxDiscount) calcDiscount = appliedPromotion.maxDiscount;
       } else {
         calcDiscount = appliedPromotion.discountValue;
       }
     }
     
-    return {
-      subtotal: calcSubtotal,
-      discount: calcDiscount,
-      total: Math.max(0, calcSubtotal - calcDiscount) // Đảm bảo total không bị âm
-    };
-  }, [cart, appliedPromotion]);
-
-  // ==========================================
-  // LOGIC GIỎ HÀNG & KHUYẾN MÃI
-  // ==========================================
+    const pointDiscount = (pointsToUse || 0) * loyaltyConfig.exchangeRateRedeem;
+    calcDiscount += pointDiscount;
+    return { subtotal: calcSubtotal, discount: calcDiscount, total: Math.max(0, calcSubtotal - calcDiscount) };
+  }, [cart, appliedPromotion, pointsToUse, loyaltyConfig]);
 
   const applyPromotion = () => {
     if (!promoCode.trim()) return showToast('Vui lòng nhập mã', 'warning');
     const promotion = mockPromotions.find(p => p.code.toUpperCase() === promoCode.toUpperCase() && p.isActive);
     if (!promotion) return showToast('Mã không hợp lệ', 'error');
+    if (promotion.minPurchase && subtotal < promotion.minPurchase) return showToast(`Đơn tối thiểu ${formatCurrency(promotion.minPurchase)}`, 'warning');
     
-    if (promotion.minPurchase && subtotal < promotion.minPurchase) {
-      return showToast(`Đơn hàng tối thiểu ${formatCurrency(promotion.minPurchase)}`, 'warning');
-    }
     setAppliedPromotion(promotion);
     showToast('Đã áp dụng mã!', 'success');
   };
 
   const removePromotion = () => { setAppliedPromotion(null); setPromoCode(''); };
 
-  const addToCart = (product: Product) => {
-    const existingItem = cart.find(item => item.productId === product.id);
-    if (existingItem) {
-      setCart(cart.map(item => item.productId === product.id
-          ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.unitPrice } : item
-      ));
+  const handleProductClick = (product: any) => {
+    const variants = product.variants || [];
+    if (variants.length === 0) {
+      return showToast('Sản phẩm này chưa có biến thể (màu/size). Không thể bán!', 'error');
+    }
+    if (variants.length === 1) {
+      addVariantToCart(product, variants[0]);
     } else {
-      setCart([...cart, { id: `cart-${Date.now()}`, orderId: '', productId: product.id, productName: product.name, quantity: 1, unitPrice: product.price, discount: 0, total: product.price }]);
+      setCurrentProduct(product);
+      setVariantDialogOpen(true);
+    }
+  };
+
+  const addVariantToCart = (product: any, variant: any) => {
+    const existingItem = cart.find(item => item.variantId === variant.id);
+    if (existingItem) {
+      setCart(cart.map(item => item.variantId === variant.id ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.unitPrice } : item));
+    } else {
+      const attrName = [variant.colorName, variant.sizeName].filter(Boolean).join(' - ') || variant.sku;
+      const finalName = `${product.name} (${attrName})`;
+      const finalPrice = variant.sellPrice || product.price;
+      setCart([...cart, { id: `cart-v${variant.id}`, productId: product.id, variantId: variant.id, productName: finalName, quantity: 1, unitPrice: finalPrice, discount: 0, total: finalPrice }]);
     }
   };
 
@@ -174,39 +209,29 @@ export const POSPage: React.FC = () => {
 
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.id !== id));
 
-  // ==========================================
-  // LOGIC THANH TOÁN & LƯU DB
-  // ==========================================
-
   const submitOrderToDatabase = async () => {
     if (!selectedStore) return showToast('Chưa chọn cửa hàng', 'error');
     if (!user || !user.id) return showToast('Lỗi: Chưa đăng nhập', 'error');
+    if (paymentMethod === PaymentMethod.CASH && customerCash !== '' && Number(customerCash) < total) {
+      return showToast('Tiền khách đưa không đủ!', 'error');
+    }
 
     try {
       setLoading(true);
       const orderPayload = {
-        cuaHangId: selectedStore.id, 
-        nhanVienId: user.id, 
-        kenhBan: 'RETAIL',
-        status: 'COMPLETED',
-        notes: paymentMethod === PaymentMethod.QR_CODE ? "Thanh toán chuyển khoản" : "Bán tại quầy POS",
-        tamTinh: subtotal,
-        chietKhau: discount,
+        orderType: 'RETAIL', 
+        paymentMethod: paymentMethod === PaymentMethod.QR_CODE ? 'BANK_TRANSFER' : paymentMethod,
         shippingFee: 0,
-        tongPhaiThanhToan: total,
-        paymentMethod: paymentMethod === PaymentMethod.QR_CODE ? 'QR_CODE' : paymentMethod,
+        customerId: selectedCustomer?.id || null, 
+        discount: discount, 
         items: cart.map(item => ({
-          bienTheId: Number(item.productId),
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          discount: 0
+          productVariantId: Number(item.variantId), 
+          quantity: item.quantity
         }))
       };
 
-      // 1. Lưu vào Database MySQL
       await orderAPI.create(orderPayload as any); 
 
-      // 2. Bắn dữ liệu lên Google Sheets
       try {
         const formData = new URLSearchParams();
         formData.append('thoiGian', new Date().toLocaleString('vi-VN'));
@@ -215,37 +240,27 @@ export const POSPage: React.FC = () => {
         formData.append('tongTien', total.toString());
         formData.append('hinhThuc', paymentMethod === PaymentMethod.QR_CODE ? 'Chuyển khoản' : 'Tiền mặt');
         formData.append('sanPham', cart.map(item => `${item.productName} (x${item.quantity})`).join(', '));
+        if (selectedCustomer) formData.append('khachHang', selectedCustomer.fullName);
 
         await fetch('https://script.google.com/macros/s/AKfycbzl5yAluSPScYslJtEbmoFP8X5v30M1ocxtQE_yq6K9k3utG7XsaVafssSFWo4kUPBElg/exec', { 
-          method: 'POST',
-          body: formData,
-          mode: 'no-cors' 
+          method: 'POST', body: formData, mode: 'no-cors' 
         });
-        console.log("Đã gửi lệnh lưu lên Google Sheets!");
-      } catch (sheetErr) {
-        console.error("Lỗi khi bắn dữ liệu lên Sheets:", sheetErr);
-      }
+      } catch (sheetErr) { console.error(sheetErr); }
 
       showToast(`Thanh toán thành công!`, 'success');
-      setCart([]); 
-      setAppliedPromotion(null);
-      setPromoCode('');
-      setOpenQRDialog(false); 
+      
+      // RESET POS SAU KHI XONG
+      setCart([]); setAppliedPromotion(null); setPromoCode(''); setOpenQRDialog(false); 
+      setSelectedCustomer(null); setPointsToUse(0); setCustomerPhone(''); setCustomerCash('');
     } catch (err: any) {
       showToast('Lỗi khi thanh toán: ' + (err.response?.data?.message || err.message), 'error');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
   const handleCheckoutClick = () => {
     if (cart.length === 0) return showToast('Giỏ hàng trống', 'warning');
-    
-    if (paymentMethod === PaymentMethod.QR_CODE) {
-      setOpenQRDialog(true); 
-    } else {
-      submitOrderToDatabase(); 
-    }
+    if (paymentMethod === PaymentMethod.QR_CODE) setOpenQRDialog(true); 
+    else submitOrderToDatabase(); 
   };
 
   const handlePrintReceipt = () => {
@@ -253,147 +268,75 @@ export const POSPage: React.FC = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return showToast('Vui lòng cho phép popup để in', 'error');
     const htmlContent = generateReceiptHTML(cart, subtotal, discount, total);
-    printWindow.document.open();
-    printWindow.document.write(htmlContent);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(() => {
-      printWindow.print();
-      printWindow.close();
-    }, 250);
+    printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
+    printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
   };
 
   const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
   };
 
-  // ==========================================
-  // GIAO DIỆN 1: MÀN HÌNH CHỌN CỬA HÀNG
-  // ==========================================
   if (!selectedStore) {
     return (
       <Box sx={{ p: 4, bgcolor: '#f4f6f8', minHeight: 'calc(100vh - 64px)' }}>
-        <Typography variant="h4" align="center" sx={{ fontWeight: 800, color: '#1e293b', mb: 1 }}>
-          Chọn Cửa Hàng Bán Hàng
-        </Typography>
-        <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 5 }}>
-          Vui lòng chọn cửa hàng bạn đang làm việc để hệ thống ghi nhận doanh thu chính xác.
-        </Typography>
-
+        <Typography variant="h4" align="center" sx={{ fontWeight: 800, color: '#1e293b', mb: 1 }}>Chọn Cửa Hàng Bán Hàng</Typography>
+        <Typography variant="body1" align="center" color="text.secondary" sx={{ mb: 5 }}>Vui lòng chọn cửa hàng bạn đang làm việc để ghi nhận doanh thu chính xác.</Typography>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 10 }}><CircularProgress /></Box>
         ) : (
           <Grid container spacing={3} justifyContent="center" maxWidth="lg" mx="auto">
             {stores.map((store) => (
               <Grid item xs={12} sm={6} md={4} key={store.id}>
-                <Card 
-                  onClick={() => setSelectedStore(store)}
-                  sx={{ 
-                    cursor: 'pointer', borderRadius: 3, border: '2px solid transparent',
-                    transition: 'all 0.3s ease',
-                    '&:hover': {
-                      transform: 'translateY(-5px)',
-                      borderColor: 'primary.main',
-                      boxShadow: '0 12px 24px rgba(0,0,0,0.1)'
-                    }
-                  }}
-                >
+                <Card onClick={() => setSelectedStore(store)} sx={{ cursor: 'pointer', borderRadius: 3, border: '2px solid transparent', transition: 'all 0.3s ease', '&:hover': { transform: 'translateY(-5px)', borderColor: 'primary.main', boxShadow: '0 12px 24px rgba(0,0,0,0.1)' } }}>
                   <CardContent sx={{ textAlign: 'center', py: 6 }}>
-                    <Box sx={{ width: 80, height: 80, borderRadius: '50%', bgcolor: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}>
-                      <StoreIcon sx={{ fontSize: 40, color: '#0ea5e9' }} />
-                    </Box>
-                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, color: '#0f172a' }}>
-                      {store.name}
-                    </Typography>
-                    <Typography variant="body2" color="text.secondary" sx={{ display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                      {store.address || 'Chưa cập nhật địa chỉ'}
-                    </Typography>
+                    <Box sx={{ width: 80, height: 80, borderRadius: '50%', bgcolor: '#e0f2fe', display: 'flex', alignItems: 'center', justifyContent: 'center', mx: 'auto', mb: 3 }}><StoreIcon sx={{ fontSize: 40, color: '#0ea5e9' }} /></Box>
+                    <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, color: '#0f172a' }}>{store.name}</Typography>
+                    <Typography variant="body2" color="text.secondary">{store.address || 'Chưa cập nhật địa chỉ'}</Typography>
                   </CardContent>
                 </Card>
               </Grid>
             ))}
-            {stores.length === 0 && (
-              <Typography color="error" variant="h6" sx={{ mt: 5 }}>
-                Chưa có cửa hàng nào trong hệ thống! Vui lòng tạo cửa hàng trước.
-              </Typography>
-            )}
           </Grid>
         )}
       </Box>
     );
   }
 
-  // ==========================================
-  // GIAO DIỆN 2: MÀN HÌNH POS BÁN HÀNG
-  // ==========================================
   return (
     <Box sx={{ p: 2, height: 'calc(100vh - 64px)', overflow: 'hidden', bgcolor: '#f8fafc' }}>
-      
-      {/* HEADER CỦA MÀN HÌNH POS */}
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2, bgcolor: '#fff', p: 1.5, borderRadius: 2, boxShadow: '0 1px 3px rgba(0,0,0,0.05)' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <IconButton onClick={() => setSelectedStore(null)} sx={{ bgcolor: '#f1f5f9' }} title="Đổi cửa hàng">
-            <ArrowBackIcon />
-          </IconButton>
+          <IconButton onClick={() => setSelectedStore(null)} sx={{ bgcolor: '#f1f5f9' }}><ArrowBackIcon /></IconButton>
           <Box>
-            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', lineHeight: 1 }}>
-              POS Bán Hàng
-            </Typography>
-            <Typography variant="caption" sx={{ color: '#0ea5e9', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}>
-              <StoreIcon fontSize="inherit" /> {selectedStore.name}
-            </Typography>
+            <Typography variant="h6" sx={{ fontWeight: 700, color: '#1e293b', lineHeight: 1 }}>POS Bán Hàng</Typography>
+            <Typography variant="caption" sx={{ color: '#0ea5e9', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 0.5, mt: 0.5 }}><StoreIcon fontSize="inherit" /> {selectedStore.name}</Typography>
           </Box>
         </Box>
-        <Typography variant="body2" color="text.secondary">
-          Thu ngân: <strong>{user?.fullName || 'Admin'}</strong>
-        </Typography>
+        <Typography variant="body2" color="text.secondary">Thu ngân: <strong>{user?.fullName || 'Admin'}</strong></Typography>
       </Box>
 
-      {/* NỘI DUNG POS */}
       <Grid container spacing={2} sx={{ height: 'calc(100% - 70px)' }}>
-        {/* Cột Trái: Danh sách Sản phẩm */}
-        <Grid item xs={12} md={8} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+        <Grid item xs={12} md={6} sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
           <Card sx={{ flex: 1, display: 'flex', flexDirection: 'column', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <CardContent sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%' }}>
-              <TextField
-                fullWidth size="small" placeholder="Tìm kiếm sản phẩm theo tên hoặc mã SKU..."
-                value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-                InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }}
-                sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-
+              <TextField fullWidth size="small" placeholder="Tìm kiếm sản phẩm..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon /></InputAdornment> }} sx={{ mb: 2, '& .MuiOutlinedInput-root': { borderRadius: 2 } }} />
               <Box sx={{ flex: 1, overflowY: 'auto', pr: 1 }}>
                 {loading && products.length === 0 ? (
-                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}>
-                    <CircularProgress />
-                  </Box>
+                  <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%' }}><CircularProgress /></Box>
                 ) : (
                   <Grid container spacing={2}>
                     {filteredProducts.map((product) => {
-                      const pExtra = product as any;
-                      const imageUrl = pExtra.hinhAnhUrls?.[0] || 'https://via.placeholder.com/150?text=No+Image';
-                      
+                      const imageUrl = getProductImage(product);
                       return (
-                      <Grid item xs={6} sm={4} md={3} key={product.id}>
-                        <Card
-                          sx={{
-                            cursor: 'pointer', transition: 'all 0.2s', height: '100%', display: 'flex', flexDirection: 'column',
-                            border: '1px solid #e2e8f0', boxShadow: 'none',
-                            '&:hover': { borderColor: 'primary.main', transform: 'translateY(-4px)', boxShadow: '0 8px 16px rgba(0,0,0,0.08)' }
-                          }}
-                          onClick={() => addToCart(product)}
-                        >
+                      <Grid item xs={6} sm={4} md={4} key={product.id}>
+                        <Card onClick={() => handleProductClick(product)} sx={{ cursor: 'pointer', transition: 'all 0.2s', height: '100%', display: 'flex', flexDirection: 'column', border: '1px solid #e2e8f0', boxShadow: 'none', '&:hover': { borderColor: 'primary.main', transform: 'translateY(-4px)', boxShadow: '0 8px 16px rgba(0,0,0,0.08)' } }}>
                           <Box component="img" src={imageUrl} sx={{ height: 110, width: '100%', objectFit: 'cover', borderBottom: '1px solid #f1f5f9' }} />
                           <CardContent sx={{ p: 1.5, flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'space-between', pb: '12px !important' }}>
                             <Box>
                               <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: 'block', mb: 0.5 }}>{product.code}</Typography>
-                              <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3, color: '#1e293b', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                                {product.name}
-                              </Typography>
+                              <Typography variant="body2" sx={{ fontWeight: 600, lineHeight: 1.3, color: '#1e293b', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>{product.name}</Typography>
                             </Box>
-                            <Typography variant="subtitle1" sx={{ color: '#dc2626', fontWeight: 700, mt: 1 }}>
-                              {formatCurrency(product.price)}
-                            </Typography>
+                            <Typography variant="subtitle1" sx={{ color: '#dc2626', fontWeight: 700, mt: 1 }}>{formatCurrency(product.price)}</Typography>
                           </CardContent>
                         </Card>
                       </Grid>
@@ -405,19 +348,15 @@ export const POSPage: React.FC = () => {
           </Card>
         </Grid>
 
-        {/* Cột Phải: Giỏ hàng & Thanh toán */}
-        <Grid item xs={12} md={4} sx={{ height: '100%' }}>
+        <Grid item xs={12} md={6} sx={{ height: '100%' }}>
           <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
             <CardContent sx={{ p: 2, display: 'flex', flexDirection: 'column', height: '100%', pb: '16px !important' }}>
-              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, borderBottom: '2px solid #f1f5f9', pb: 1.5, color: '#0f172a' }}>
-                Giỏ Hàng
-              </Typography>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 1, borderBottom: '2px solid #f1f5f9', pb: 1.5, color: '#0f172a' }}>Giỏ Hàng</Typography>
 
               <Box sx={{ flex: 1, overflowY: 'auto', mx: -2, px: 2 }}>
                 {cart.length === 0 ? (
                   <Box sx={{ textAlign: 'center', py: 8 }}>
                     <Typography color="text.secondary" sx={{ fontWeight: 500 }}>Giỏ hàng trống</Typography>
-                    <Typography variant="caption" color="text.disabled">Hãy chọn sản phẩm bên trái</Typography>
                   </Box>
                 ) : (
                   <TableContainer>
@@ -450,42 +389,23 @@ export const POSPage: React.FC = () => {
 
               <Box sx={{ mt: 2, pt: 2, borderTop: '2px solid #f1f5f9' }}>
                 <Box sx={{ mb: 2 }}>
-            {!appliedPromotion ? (
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <TextField 
-                        fullWidth 
-                        size="small" 
-                        placeholder="Mã giảm giá (VD: GIAM10)" 
-                        value={promoCode} 
-                        onChange={(e) => setPromoCode(e.target.value.toUpperCase())} 
-                        onKeyPress={(e) => { if (e.key === 'Enter') applyPromotion(); }} 
-                        sx={{ 
-                          '& .MuiOutlinedInput-root': { 
-                            borderRadius: 1.5, 
-                            height: '42px' 
-                          } 
-                        }} 
-                      />
-                      <Button 
-                        variant="outlined" 
-                        onClick={applyPromotion} 
-                        sx={{ 
-                          borderRadius: 1.5, 
-                          fontWeight: 600, 
-                          height: '42px', 
-                          minWidth: '100px' 
-                        }}
-                      >
-                        Áp dụng
-                      </Button>
+                  {!selectedCustomer ? (
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <TextField size="small" fullWidth placeholder="Tìm SĐT khách hàng..." value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} onKeyPress={e => e.key === 'Enter' && handleFindCustomer()} InputProps={{ startAdornment: <InputAdornment position="start"><AccountIcon fontSize="small" /></InputAdornment> }} sx={{ '& .MuiOutlinedInput-root': { borderRadius: 1.5, height: '40px' } }} />
+                      <Button variant="outlined" onClick={handleFindCustomer} sx={{ borderRadius: 1.5, fontWeight: 600, height: '40px' }}>Tìm</Button>
                     </Box>
                   ) : (
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.5, bgcolor: '#dcfce7', borderRadius: 1.5, border: '1px solid #bbf7d0' }}>
-                      <Box>
-                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#166534' }}>{appliedPromotion.name}</Typography>
-                        <Typography variant="caption" sx={{ color: '#15803d', fontWeight: 500 }}>{appliedPromotion.code}</Typography>
+                    <Box sx={{ p: 1.5, bgcolor: '#f0f9ff', borderRadius: 1.5, border: '1px solid #bae6fd' }}>
+                      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
+                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#0369a1' }}>{selectedCustomer.fullName}</Typography>
+                        <IconButton size="small" onClick={() => { setSelectedCustomer(null); setPointsToUse(0); setCustomerPhone(''); }} sx={{ p: 0 }}><DeleteIcon fontSize="small" color="error" /></IconButton>
                       </Box>
-                      <IconButton size="small" onClick={removePromotion} sx={{ color: '#dc2626' }}><DeleteIcon fontSize="small" /></IconButton>
+                      {selectedCustomer.currentPoints > 0 && (
+                        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mt: 1 }}>
+                          <TextField size="small" type="number" label="Dùng điểm" value={pointsToUse || ''} onChange={e => { let val = Number(e.target.value); if (val > selectedCustomer.currentPoints) val = selectedCustomer.currentPoints; if (val < 0) val = 0; setPointsToUse(val); }} sx={{ width: 120, '& .MuiInputBase-root': { height: '35px' } }} />
+                          <Typography variant="body2" color="error.main" fontWeight={600}>-{formatCurrency(pointsToUse * loyaltyConfig.exchangeRateRedeem)}</Typography>
+                        </Box>
+                      )}
                     </Box>
                   )}
                 </Box>
@@ -500,54 +420,100 @@ export const POSPage: React.FC = () => {
                     <Typography variant="body2" sx={{ color: '#16a34a', fontWeight: 600 }}>-{formatCurrency(discount)}</Typography>
                   </Box>
                 )}
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2.5, mt: 1.5, alignItems: 'center' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>Khách phải trả:</Typography>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, mt: 1, alignItems: 'center' }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>Khách trả:</Typography>
                   <Typography variant="h5" sx={{ fontWeight: 800, color: '#dc2626' }}>{formatCurrency(total)}</Typography>
                 </Box>
+
+                {/* 🟢 TÍNH TIỀN THỪA NẾU LÀ TIỀN MẶT 🟢 */}
+                {paymentMethod === PaymentMethod.CASH && (
+                  <>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, alignItems: 'center' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>Tiền khách đưa:</Typography>
+                      <TextField 
+                        size="small" 
+                        type="number" 
+                        placeholder="Nhập số tiền..."
+                        value={customerCash} 
+                        onChange={(e) => setCustomerCash(Number(e.target.value))} 
+                        sx={{ width: 140, '& .MuiInputBase-root': { height: '32px' }, input: { textAlign: 'right', fontWeight: 'bold' } }} 
+                      />
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
+                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>Tiền thừa:</Typography>
+                      <Typography variant="body1" sx={{ fontWeight: 700, color: (Number(customerCash) - total) >= 0 ? '#16a34a' : '#ef4444' }}>
+                        {customerCash === '' ? '0đ' : formatCurrency(Number(customerCash) - total)}
+                      </Typography>
+                    </Box>
+                  </>
+                )}
 
                 <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
                   <Chip label="Tiền mặt" onClick={() => setPaymentMethod(PaymentMethod.CASH)} color={paymentMethod === PaymentMethod.CASH ? 'primary' : 'default'} variant={paymentMethod === PaymentMethod.CASH ? 'filled' : 'outlined'} sx={{ flex: 1, fontWeight: 600, borderRadius: 1.5, py: 2.5 }} />
                   <Chip label="Chuyển khoản" onClick={() => setPaymentMethod(PaymentMethod.QR_CODE)} color={paymentMethod === PaymentMethod.QR_CODE ? 'primary' : 'default'} variant={paymentMethod === PaymentMethod.QR_CODE ? 'filled' : 'outlined'} sx={{ flex: 1, fontWeight: 600, borderRadius: 1.5, py: 2.5 }} />
                 </Box>
 
-                <Button fullWidth variant="contained" size="large" startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <PaymentIcon />} disabled={loading} onClick={handleCheckoutClick} sx={{ mb: 1, py: 1.5, fontSize: '1rem', fontWeight: 700, borderRadius: 2, boxShadow: '0 4px 12px rgba(25, 118, 210, 0.25)', '&:hover': { transform: 'translateY(-2px)', boxShadow: '0 6px 16px rgba(25, 118, 210, 0.35)' } }}>
+                <Button fullWidth variant="contained" size="large" startIcon={loading ? <CircularProgress size={20} color="inherit" /> : <PaymentIcon />} disabled={loading} onClick={handleCheckoutClick} sx={{ mb: 1.5, py: 1.5, fontSize: '1rem', fontWeight: 700, borderRadius: 2 }}>
                   {loading ? 'ĐANG XỬ LÝ...' : 'THANH TOÁN'}
                 </Button>
-                
-                <Button fullWidth variant="outlined" size="large" startIcon={<PrintIcon />} onClick={handlePrintReceipt} sx={{ py: 1.2, fontWeight: 700, borderRadius: 2, borderWidth: '2px !important', color: '#475569', borderColor: '#cbd5e1', '&:hover': { bgcolor: '#f8fafc', color: '#0f172a', borderColor: '#94a3b8' } }}>
+
+                {/* 🟢 NÚT IN HÓA ĐƠN ĐÃ QUAY LẠI 🟢 */}
+                <Button fullWidth variant="outlined" size="large" startIcon={<PrintIcon />} onClick={handlePrintReceipt} sx={{ py: 1.2, fontWeight: 700, borderRadius: 2, borderWidth: '2px !important', color: '#475569', borderColor: '#cbd5e1' }}>
                   IN HÓA ĐƠN
                 </Button>
+
               </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      {/* ================= DIALOG MÃ QR CHUYỂN KHOẢN ================= */}
-      <Dialog open={openQRDialog} onClose={() => !loading && setOpenQRDialog(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', color: 'primary.main', pb: 1 }}>
-          Thanh Toán Chuyển Khoản
+      {/* POPUP CHỌN PHÂN LOẠI */}
+      <Dialog open={variantDialogOpen} onClose={() => setVariantDialogOpen(false)} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: 3 } }}>
+        <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #e2e8f0', pb: 2 }}>
+          Chọn phân loại: {currentProduct?.name}
         </DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
+          <Grid container spacing={2}>
+            {currentProduct?.variants?.map((v: any) => (
+              <Grid item xs={12} sm={6} key={v.id}>
+                <Button 
+                  fullWidth variant="outlined" 
+                  onClick={() => { addVariantToCart(currentProduct, v); setVariantDialogOpen(false); }}
+                  disabled={v.quantity <= 0}
+                  sx={{ justifyContent: 'flex-start', textAlign: 'left', p: 1.5, borderRadius: 2, height: '100%', borderColor: '#cbd5e1', '&:hover': { bgcolor: '#f0f9ff', borderColor: '#0ea5e9' } }}
+                >
+                  <Box>
+                    <Typography variant="body1" fontWeight="700" color="#0f172a" mb={0.5}>
+                      {[v.colorName, v.sizeName].filter(Boolean).join(' - ') || v.sku}
+                    </Typography>
+                    <Typography variant="body2" color="#dc2626" fontWeight="bold">
+                      {formatCurrency(v.sellPrice || currentProduct?.price)}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      Tồn kho: {v.quantity}
+                    </Typography>
+                  </Box>
+                </Button>
+              </Grid>
+            ))}
+          </Grid>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}>
+          <Button onClick={() => setVariantDialogOpen(false)} color="inherit" sx={{ fontWeight: 600 }}>Hủy</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* POPUP QUÉT QR */}
+      <Dialog open={openQRDialog} onClose={() => !loading && setOpenQRDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', color: 'primary.main', pb: 1 }}>Thanh Toán Chuyển Khoản</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', pt: 1 }}>
-          <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>
-            Vui lòng quét mã QR dưới đây. <br/>
-            Số tiền: <strong style={{ color: '#dc2626', fontSize: '1.2rem' }}>{formatCurrency(total)}</strong>
-          </Typography>
-          
-          <Box 
-            component="img"
-            src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=ThanhToanPOS&accountName=NGUYEN%20LUU%20HUNG`}
-            alt="QR Code"
-            sx={{ width: 250, height: 250, border: '2px solid #e2e8f0', borderRadius: 2, p: 1 }}
-          />
+          <Typography variant="body1" sx={{ mb: 2, textAlign: 'center' }}>Số tiền: <strong style={{ color: '#dc2626', fontSize: '1.2rem' }}>{formatCurrency(total)}</strong></Typography>
+          <Box component="img" src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=ThanhToanPOS&accountName=NGUYEN%20LUU%20HUNG`} alt="QR Code" sx={{ width: 250, height: 250, border: '2px solid #e2e8f0', borderRadius: 2, p: 1 }} />
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pb: 3, gap: 2, pt: 0 }}>
-          <Button variant="outlined" color="error" onClick={() => setOpenQRDialog(false)} disabled={loading}>
-            Hủy Giao Dịch
-          </Button>
-          <Button variant="contained" color="success" onClick={submitOrderToDatabase} disabled={loading}>
-            {loading ? 'Đang lưu...' : 'Đã Nhận Tiền'}
-          </Button>
+          <Button variant="outlined" color="error" onClick={() => setOpenQRDialog(false)} disabled={loading}>Hủy Giao Dịch</Button>
+          <Button variant="contained" color="success" onClick={submitOrderToDatabase} disabled={loading}>{loading ? 'Đang lưu...' : 'Đã Nhận Tiền'}</Button>
         </DialogActions>
       </Dialog>
 

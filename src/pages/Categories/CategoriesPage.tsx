@@ -8,11 +8,8 @@ import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, Category as CategoryIcon,
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-// Xóa useAuthStore vì chúng ta không dùng isSuperAdmin nữa
 import { categoryAPI } from '../../api/client';
-import { BackendCategory } from '../../types/api.types';
 
-// Type nội bộ cho CategoriesPage
 interface Category {
   id: string;
   name: string;
@@ -36,26 +33,39 @@ export const CategoriesPage: React.FC = () => {
     loadCategories();
   }, []);
 
-  // HÀM LOAD ĐÃ ĐƯỢC NÂNG CẤP ĐỂ BẮT MỌI LOẠI DATA BACKEND TRẢ VỀ
   const loadCategories = async () => {
     try {
       setLoading(true);
       const response = await categoryAPI.getAll();
       
       const responseData = response.data as any;
-      // Dù backend trả về Mảng trực tiếp hay bọc trong ApiResponse thì đều lấy được
       const backendCats = Array.isArray(responseData) ? responseData : (responseData?.data || []);
 
-      const mappedCats: Category[] = backendCats.map((cat: any) => ({
-        id: cat.id?.toString() || '',
-        name: cat.name || '',
-        description: cat.description || undefined,
-        parentId: cat.parentId?.toString() || undefined,
-        image: cat.image || undefined,
-        isActive: cat.isActive !== undefined ? cat.isActive : true,
-        createdAt: cat.createdAt ? new Date(cat.createdAt) : undefined,
-        updatedAt: cat.updatedAt ? new Date(cat.updatedAt) : undefined,
-      }));
+      const mappedCats: Category[] = backendCats.map((cat: any) => {
+        let pId = undefined;
+        
+        // 1. Fix lỗi Parent: Lấy parentName do Java trả về để dò tìm ID của danh mục cha
+        if (cat.parentId) {
+           pId = typeof cat.parentId === 'object' ? cat.parentId.id?.toString() : cat.parentId.toString();
+        } else if (cat.parentName) {
+           const parentObj = backendCats.find((c: any) => c.name === cat.parentName);
+           if (parentObj) pId = parentObj.id?.toString();
+        }
+
+        // 2. Fix lỗi Status: Map biến status (EntityStatus) của Java sang boolean
+        const isAct = cat.status ? (cat.status === 'ACTIVE') : (cat.isActive !== false);
+
+        return {
+          id: cat.id?.toString() || '',
+          name: cat.name || '',
+          description: cat.description || undefined,
+          parentId: pId,
+          image: cat.image || undefined,
+          isActive: isAct,
+          createdAt: cat.createdAt ? new Date(cat.createdAt) : undefined,
+          updatedAt: cat.updatedAt ? new Date(cat.updatedAt) : undefined,
+        };
+      });
       
       setCategories(mappedCats);
       
@@ -102,21 +112,20 @@ export const CategoriesPage: React.FC = () => {
     }
 
     try {
+      // Đã gộp gửi cả isActive và status để Backend Java của bạn nhận được dữ liệu
+      const payload = {
+        name: formData.name,
+        description: formData.description || undefined,
+        parentId: formData.parentId ? parseInt(formData.parentId) : null,
+        isActive: formData.isActive,
+        status: formData.isActive ? 'ACTIVE' : 'INACTIVE'
+      };
+
       if (editingCategory) {
-        await categoryAPI.update(parseInt(editingCategory.id), {
-          name: formData.name,
-          description: formData.description || undefined,
-          parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
-          isActive: formData.isActive,
-        });
+        await categoryAPI.update(parseInt(editingCategory.id), payload);
         showToast('Cập nhật danh mục thành công', 'success');
       } else {
-        await categoryAPI.create({
-          name: formData.name,
-          description: formData.description || undefined,
-          parentId: formData.parentId ? parseInt(formData.parentId) : undefined,
-          isActive: formData.isActive,
-        });
+        await categoryAPI.create(payload);
         showToast('Thêm danh mục thành công', 'success');
       }
       handleCloseDialog();
@@ -157,7 +166,6 @@ export const CategoriesPage: React.FC = () => {
           Quản Lý Danh Mục
         </Typography>
         
-        {/* NÚT THÊM DANH MỤC LUÔN HIỆN */}
         <Button
           variant="contained"
           startIcon={<AddIcon />}
@@ -184,8 +192,8 @@ export const CategoriesPage: React.FC = () => {
       <Grid container spacing={3}>
         {topLevelCategories.map((category) => (
           <Grid item xs={12} md={6} lg={4} key={category.id}>
-            <Card sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
-              <CardContent>
+            <Card sx={{ borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)', height: '100%', display: 'flex', flexDirection: 'column' }}>
+              <CardContent sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', mb: 2 }}>
                   <Box>
                     <Typography variant="h6" sx={{ fontWeight: 600, color: '#0f172a' }}>
@@ -204,22 +212,30 @@ export const CategoriesPage: React.FC = () => {
                   />
                 </Box>
                 
-                {childCategories.filter(cat => cat.parentId === category.id).length > 0 && (
-                  <Box sx={{ mt: 2 }}>
-                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
-                      Danh mục con:
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
-                      {childCategories
-                        .filter(cat => cat.parentId === category.id)
-                        .map(child => (
-                          <Chip key={child.id} label={child.name} size="small" variant="outlined" sx={{ bgcolor: '#f1f5f9' }} />
-                        ))}
+                <Box sx={{ flex: 1 }}>
+                  {childCategories.filter(cat => cat.parentId === category.id).length > 0 && (
+                    <Box sx={{ mt: 2 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 600 }}>
+                        Danh mục con:
+                      </Typography>
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 0.5 }}>
+                        {childCategories
+                          .filter(cat => cat.parentId === category.id)
+                          .map(child => (
+                            <Chip 
+                              key={child.id} 
+                              label={child.name} 
+                              size="small" 
+                              variant="outlined" 
+                              sx={{ bgcolor: '#f1f5f9', cursor: 'pointer', '&:hover': { borderColor: 'primary.main', color: 'primary.main' } }} 
+                              onClick={() => handleOpenDialog(child)} 
+                            />
+                          ))}
+                      </Box>
                     </Box>
-                  </Box>
-                )}
+                  )}
+                </Box>
                 
-                {/* NÚT SỬA/XÓA LUÔN HIỆN */}
                 <Box sx={{ display: 'flex', gap: 1, mt: 3 }}>
                   <Button size="small" variant="outlined" startIcon={<EditIcon />} onClick={() => handleOpenDialog(category)} fullWidth>
                     Sửa
@@ -234,7 +250,6 @@ export const CategoriesPage: React.FC = () => {
         ))}
       </Grid>
 
-      {/* Add/Edit Dialog */}
       <Dialog open={openDialog} onClose={handleCloseDialog} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>
           {editingCategory ? 'Chỉnh Sửa Danh Mục' : 'Thêm Danh Mục Mới'}

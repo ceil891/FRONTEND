@@ -1,178 +1,119 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip
+  Box, Card, Typography, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, TextField, Button,
+  Chip, CircularProgress, Stack, Paper
 } from '@mui/material';
 import {
-  Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  Visibility as ViewIcon, PictureAsPdf as PdfIcon
+  FileDownload as ExcelIcon, FilterAlt as FilterIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
-
-// 👉 THÊM IMPORT API
-import { orderAPI } from '../../api/client'; 
+import { orderAPI } from '../../api/client';
 import { useToastStore } from '../../store/toastStore';
-
-// KHAI BÁO TYPE CHO LỊCH SỬ GIAO DỊCH
-export interface BackendOrderHistoryRow {
-  id: number;
-  maGD: string;
-  thoiGian: string;
-  loaiGD: string;
-  doiTuong?: string;
-  giaTri: number;
-  phuongThuc?: string;
-  nhanVien?: string;
-}
 
 export const OrderHistoryPage: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [rows, setRows] = useState<BackendOrderHistoryRow[]>([]);
+  const [rows, setRows] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const { showToast } = useToastStore();
 
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
+  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  const filtered = useMemo(() => {
-    const kw = searchQuery.trim().toLowerCase();
-    if (!kw) return rows;
-    return rows.filter((r) =>
-      [r.maGD, r.doiTuong, r.loaiGD, r.phuongThuc, r.nhanVien]
-        .filter(Boolean)
-        .some((v) => String(v).toLowerCase().includes(kw))
+  // Cập nhật lại logic Chip cho khớp với orderType (RETAIL / ONLINE) từ Backend
+  const renderTypeChip = (type: string) => {
+    const isOnline = type === 'ONLINE';
+    return (
+      <Chip 
+        label={isOnline ? 'Online' : 'Tại quầy'} 
+        size="small" 
+        sx={{ 
+            bgcolor: isOnline ? '#e0f2fe' : '#dcfce7', 
+            color: isOnline ? '#0284c7' : '#15803d', 
+            fontWeight: 800, 
+            borderRadius: 1.5 
+        }} 
+      />
     );
-  }, [rows, searchQuery]);
+  };
 
-  useEffect(() => {
-    let mounted = true;
-    setLoading(true);
-    
-    // 👉 SỬA LẠI THÀNH orderAPI CHUNG CHO ĐỒNG BỘ
-    orderAPI.query({ type: 'HISTORY' }) // Truyền param history để backend biết
-      .then((res) => {
-        if (!mounted) return;
-        const dataList = res.data.data || res.data || [];
-        setRows(dataList);
-      })
-      .catch((err) => {
-        if (mounted) showToast('Lỗi khi tải lịch sử giao dịch', 'error');
-      })
-      .finally(() => {
-        if (mounted) setLoading(false);
-      });
-      
-    return () => {
-      mounted = false;
-    };
-  }, [showToast]);
-
-  const downloadExcel = async () => {
+  const loadData = async () => {
     try {
-      showToast('Đang tạo file Excel...', 'info');
-      // 👉 SỬA LẠI THÀNH orderAPI
-      const res = await orderAPI.exportExcel({ type: 'HISTORY', keyword: searchQuery.trim() || undefined });
-      
-      const blob = new Blob([res.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `lich_su_giao_dich_${new Date().getTime()}.xlsx`;
-      a.click();
-      window.URL.revokeObjectURL(url);
-      
-      showToast('Tải Excel thành công!', 'success');
-    } catch (error) {
-      showToast('Lỗi khi tải file Excel', 'error');
+      setLoading(true);
+      const res = await orderAPI.query({ type: 'HISTORY' });
+      const data = res.data?.data || res.data || [];
+      // Đảm bảo dữ liệu là mảng trước khi setRows
+      setRows(Array.isArray(data) ? data : []);
+    } catch (err) {
+      showToast('Lỗi tải lịch sử', 'error');
+    } finally { 
+        setLoading(false); 
     }
   };
 
-  const getTransactionTypeChip = (type: string) => {
-    if (type === 'Bán hàng') return <Chip label={type} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, borderRadius: 1 }} />;
-    if (type === 'Trả hàng') return <Chip label={type} size="small" sx={{ bgcolor: '#ffedd5', color: '#c2410c', fontWeight: 600, borderRadius: 1 }} />;
-    return <Chip label={type} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600, borderRadius: 1 }} />;
-  };
+  useEffect(() => { loadData(); }, []);
+
+  // Cập nhật lại các trường tìm kiếm khớp với Backend
+  const filtered = useMemo(() => {
+    const kw = searchQuery.trim().toLowerCase();
+    if (!kw) return rows;
+    return rows.filter((r) => 
+      [r.orderNumber, r.customerName, r.employeeName, r.customerPhone]
+        .some(v => String(v || '').toLowerCase().includes(kw))
+    );
+  }, [rows, searchQuery]);
 
   return (
-    <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          LỊCH SỬ GIAO DỊCH
-        </Typography>
+    <Box sx={{ p: 3, bgcolor: '#f4f6f8', minHeight: '100vh' }}>
+      <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between' }}>
+        <Typography variant="h5" fontWeight={800} color="#1e293b">LỊCH SỬ GIAO DỊCH</Typography>
+        <Stack direction="row" spacing={1}>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadData} sx={{ borderRadius: 2, bgcolor: '#fff' }}>Làm mới</Button>
+            <Button variant="contained" startIcon={<ExcelIcon />} sx={{ borderRadius: 2, bgcolor: '#0284c7' }}>Xuất Excel</Button>
+        </Stack>
       </Box>
 
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
+      <Card sx={{ borderRadius: 4, overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+        <Box sx={{ p: 2, borderBottom: '1px solid #f1f5f9' }}>
             <TextField 
-              size="small" placeholder="Tìm: Mã GD/Khách hàng" 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
+                fullWidth size="small" 
+                placeholder="Tìm kiếm theo mã HĐ, tên khách hàng, nhân viên..." 
+                value={searchQuery} 
+                onChange={e => setSearchQuery(e.target.value)} 
+                InputProps={{ startAdornment: <FilterIcon sx={{ mr: 1, color: 'text.disabled' }} /> }} 
             />
-            
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Lịch Sử</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} onClick={downloadExcel} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
-            <Button size="small" variant="contained" startIcon={<PdfIcon />} sx={{ bgcolor: '#00c0ef', '&:hover': { bgcolor: '#00acd6' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất PDF</Button>
-          </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer>
-            <Table sx={{ minWidth: 1000 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 50, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Xem</TableCell>
-                  
-                  {['Mã GD', 'Thời Gian', 'Loại Giao Dịch', 'Đối Tượng (Khách Hàng)', 'Giá Trị', 'Phương Thức', 'Nhân Viên'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
+        </Box>
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead sx={{ bgcolor: '#1e293b' }}>
+              <TableRow>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Mã GD</TableCell>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Thời Gian</TableCell>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Kênh Bán</TableCell>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Khách Hàng</TableCell>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }} align="right">Tổng Tiền</TableCell>
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Nhân Viên</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody sx={{ bgcolor: '#fff' }}>
+              {loading ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
+              ) : filtered.length === 0 ? (
+                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>Không có giao dịch nào.</TableCell></TableRow>
+              ) : filtered.map((row) => (
+                <TableRow key={row.id} hover>
+                  <TableCell sx={{ fontWeight: 700 }}>{row.orderNumber}</TableCell>
+                  <TableCell>{new Date(row.createdAt).toLocaleString('vi-VN')}</TableCell>
+                  <TableCell>{renderTypeChip(row.orderType)}</TableCell>
+                  <TableCell sx={{ fontWeight: 600 }}>{row.customerName || 'Khách lẻ'}</TableCell>
+                  <TableCell align="right" sx={{ fontWeight: 800, color: '#16a34a' }}>
+                    {formatCurrency(row.totalAmount)}
+                  </TableCell>
+                  <TableCell>{row.employeeName || 'Admin'}</TableCell>
                 </TableRow>
-              </TableHead>
-              <TableBody>
-                {filtered.map((row, idx) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{idx + 1}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center' }}>
-                        <Box sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><ViewIcon sx={{ fontSize: 14 }} /></Box>
-                      </Box>
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.maGD}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{new Date(row.thoiGian).toLocaleString('vi-VN')}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>{getTransactionTypeChip(row.loaiGD)}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.doiTuong ?? '-'}</TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: row.giaTri < 0 ? '#dc2626' : '#16a34a', p: 1.5 }}>
-                      {row.giaTri > 0 ? '+' : ''}{formatCurrency(row.giaTri)}
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.phuongThuc ?? '-'}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', fontWeight: 600, p: 1.5 }}>{row.nhanVien ?? '-'}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-               {loading ? 'Đang tải...' : `1 - ${filtered.length} of ${filtered.length} items`}
-             </Typography>
-          </Box>
-        </CardContent>
+              ))}
+            </TableBody>
+          </Table>
+        </TableContainer>
       </Card>
     </Box>
   );

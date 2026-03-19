@@ -1,104 +1,200 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
-  Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip
+  Box, Card, Typography, Table, TableBody, TableCell, TableContainer,
+  TableHead, TableRow, TextField, Button, Chip, CircularProgress, IconButton,
+  Dialog, DialogTitle, DialogContent, DialogActions, Grid, Autocomplete, 
+  Paper, InputAdornment, Tooltip, Checkbox, Pagination, Divider
 } from '@mui/material';
 import {
-  Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
-  FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  Visibility as ViewIcon, LocalShipping as ShippingIcon, CheckCircle as ReceiveIcon
+  Add as AddIcon, Delete as DeleteIcon, Visibility as ViewIcon, 
+  Save as SaveIcon, Search as SearchIcon, Close as CloseIcon,
+  LocalShipping as ShippingIcon, CheckCircle as ConfirmIcon,
+  Print as PrintIcon, FileDownload as ExcelIcon
 } from '@mui/icons-material';
-
-const mockTransfers = [
-  { no: 1, maPhieu: 'CK260301', ngayChuyen: '06/03/2026', tuKho: 'Kho Tổng (Hà Nội)', denKho: 'Cửa hàng Đống Đa', tongSL: 150, nguoiLap: 'Admin', trangThai: 'Đã nhận' },
-  { no: 2, maPhieu: 'CK260302', ngayChuyen: '06/03/2026', tuKho: 'Kho Hồ Chí Minh', denKho: 'Cửa hàng Quận 1', tongSL: 45, nguoiLap: 'Thành Đào', trangThai: 'Đang đi đường' },
-];
+import { transferTicketAPI, productAPI, storeAPI } from '../../api/client';
+import { useToastStore } from '../../store/toastStore';
 
 export const TransferInventoryPage: React.FC = () => {
+  // --- STATES DỮ LIỆU ---
+  const [tickets, setTickets] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [stores, setStores] = useState<any[]>([]);
+  const { showToast } = useToastStore();
+
+  // Modals
+  const [openCreate, setOpenCreate] = useState(false);
+  const [openDetail, setOpenDetail] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<any>(null);
+
+  // Form State
+  const [formRequest, setFormRequest] = useState({
+    fromStoreId: null as number | null,
+    toStoreId: null as number | null,
+    createdById: 1, 
+    details: [] as any[]
+  });
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [ticketRes, prodRes, storeRes] = await Promise.all([
+        transferTicketAPI.getAll(),
+        productAPI.getAll(),
+        storeAPI.getAll()
+      ]);
+      if (ticketRes?.data?.success) setTickets(ticketRes.data.data || []);
+      if (prodRes?.data?.success) setProducts(prodRes.data.data || []);
+      if (storeRes?.data?.success) setStores(storeRes.data.data || []);
+    } catch (error) {
+      showToast('Lỗi tải dữ liệu chuyển kho', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchData(); }, []);
+
+  // --- LOGIC XỬ LÝ NÚT (FIXED: NHẤN LÀ CHẠY) ---
+
+  const handleProcess = async () => {
+    if (selectedIds.length === 0) return showToast("Vui lòng tích chọn phiếu trước!", "warning");
+    const id = selectedIds[0];
+    if (window.confirm("Xác nhận xuất hàng khỏi kho nguồn?")) {
+      try {
+        const res = await transferTicketAPI.process(id);
+        if (res.data.success) {
+          showToast("Đã xuất hàng thành công!", "success");
+          fetchData();
+          setSelectedIds([]);
+        }
+      } catch (error: any) { showToast(error.message, "error"); }
+    }
+  };
+
+  const handleConfirm = async () => {
+    if (selectedIds.length === 0) return showToast("Vui lòng tích chọn phiếu trước!", "warning");
+    const id = selectedIds[0];
+    if (window.confirm("Xác nhận đã nhận đủ hàng về kho nhập?")) {
+      try {
+        const res = await transferTicketAPI.confirm(id);
+        if (res.data.success) {
+          showToast("Nhận hàng thành công!", "success");
+          fetchData();
+          setSelectedIds([]);
+        }
+      } catch (error: any) { showToast(error.message, "error"); }
+    }
+  };
+
+  const handleSaveTransfer = async () => {
+    if (!formRequest.fromStoreId || !formRequest.toStoreId) return showToast("Vui lòng chọn đủ kho!", "warning");
+    if (formRequest.fromStoreId === formRequest.toStoreId) return showToast("Kho nguồn và đích không được trùng nhau!", "error");
+    if (formRequest.details.length === 0) return showToast("Chưa có sản phẩm nào!", "warning");
+
+    try {
+      const res = await transferTicketAPI.create(formRequest);
+      if (res.data.success) {
+        showToast("Lập phiếu thành công!", "success");
+        setOpenCreate(false);
+        setFormRequest({ fromStoreId: null, toStoreId: null, createdById: 1, details: [] });
+        fetchData();
+      }
+    } catch (error: any) { showToast(error.message, "error"); }
+  };
 
   return (
-    <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          CHUYỂN KHO NỘI BỘ
-        </Typography>
-      </Box>
+    <Box sx={{ p: 3, bgcolor: '#f4f7fe', minHeight: '100vh' }}>
+      <Typography variant="h5" fontWeight={700} sx={{ mb: 3, textTransform: 'uppercase' }}>Điều Chuyển Kho Nội Bộ</Typography>
 
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Mã phiếu/Tên kho..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 250, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            <Button size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Lập Phiếu Chuyển</Button>
-            <Button size="small" variant="contained" startIcon={<ShippingIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Hàng Đi</Button>
-            <Button size="small" variant="contained" startIcon={<ReceiveIcon />} sx={{ bgcolor: '#39cccc', '&:hover': { bgcolor: '#33b8b8' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xác Nhận Nhận Hàng</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Phiếu</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Excel</Button>
-            <Button size="small" variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#dd4b39', '&:hover': { bgcolor: '#d33724' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Hủy</Button>
-          </Box>
-
-          <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
-            <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Drag a column header and drop it here to group by that column</Typography>
-          </Box>
-
-          <TableContainer>
-            <Table sx={{ minWidth: 1000 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
-                <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>No.</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 70, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  
-                  {['Mã Phiếu', 'Ngày Chuyển', 'Từ Kho (Xuất)', 'Đến Kho (Nhận)', 'Tổng SL Hàng', 'Người Lập', 'Trạng Thái'].map((col) => (
-                    <TableCell key={col} sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>
-                        {col} <FilterIcon sx={{ fontSize: 16, color: '#cbd5e1' }} />
-                      </Box>
-                    </TableCell>
-                  ))}
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {mockTransfers.map((row) => (
-                  <TableRow key={row.no} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.no}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <Box sx={{ display: 'flex', justifyContent: 'center', gap: 0.5 }}>
-                        <Box sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer', display: 'flex' }}><ViewIcon sx={{ fontSize: 14 }} /></Box>
-                      </Box>
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#0f172a', p: 1.5 }}>{row.maPhieu}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.ngayChuyen}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#dc2626', fontWeight: 600, p: 1.5 }}>{row.tuKho}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#16a34a', fontWeight: 600, p: 1.5 }}>{row.denKho}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: '#0369a1', p: 1.5 }}>{row.tongSL}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.nguoiLap}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      {row.trangThai === 'Đã nhận' ? 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#dcfce7', color: '#166534', fontWeight: 600, border: 'none', borderRadius: 1 }} /> : 
-                        <Chip label={row.trangThai} size="small" sx={{ bgcolor: '#e0f2fe', color: '#075985', fontWeight: 600, border: 'none', borderRadius: 1 }} />
-                      }
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>1 - {mockTransfers.length} of {mockTransfers.length} items</Typography>
-          </Box>
-        </CardContent>
+      {/* TOOLBAR Y HỆT ẢNH BẠN GỬI */}
+      <Card sx={{ borderRadius: '15px', mb: 3, boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+        <Box sx={{ p: 2, display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+          <TextField 
+            size="small" placeholder="Tìm mã phiếu/tên kho..." 
+            value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
+            sx={{ width: 250, '& .MuiInputBase-root': { borderRadius: '20px' } }}
+          />
+          <Button variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', borderRadius: '20px', textTransform: 'none' }} onClick={() => setOpenCreate(true)}>Lập Phiếu</Button>
+          <Button variant="contained" startIcon={<ShippingIcon />} sx={{ bgcolor: '#f39c12', borderRadius: '20px', textTransform: 'none' }} onClick={handleProcess}>Xuất Hàng Đi</Button>
+          <Button variant="contained" startIcon={<ConfirmIcon />} sx={{ bgcolor: '#48c9b0', borderRadius: '20px', textTransform: 'none' }} onClick={handleConfirm}>Nhận Hàng</Button>
+          <Button variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', borderRadius: '20px', textTransform: 'none' }} onClick={() => window.print()}>In Phiếu</Button>
+          <Button variant="contained" startIcon={<DeleteIcon />} sx={{ bgcolor: '#e74c3c', borderRadius: '20px', textTransform: 'none' }} onClick={() => fetchData()}>Hủy</Button>
+        </Box>
       </Card>
+
+      {/* BẢNG DỮ LIỆU */}
+      <TableContainer component={Paper} sx={{ borderRadius: '15px' }}>
+        <Table size="small">
+          <TableHead sx={{ bgcolor: '#f8fafc' }}>
+            <TableRow>
+              <TableCell padding="checkbox">
+                <Checkbox size="small" onChange={(e) => e.target.checked ? setSelectedIds(tickets.map(t => t.id)) : setSelectedIds([])}/>
+              </TableCell>
+              <TableCell sx={{fontWeight: 700}}>Mã Phiếu</TableCell>
+              <TableCell sx={{fontWeight: 700}}>Từ Kho (Xuất)</TableCell>
+              <TableCell sx={{fontWeight: 700}}>Đến Kho (Nhận)</TableCell>
+              <TableCell align="center" sx={{fontWeight: 700}}>Tổng SL</TableCell>
+              <TableCell sx={{fontWeight: 700}}>Trạng Thái</TableCell>
+              <TableCell align="center" sx={{fontWeight: 700}}>Xem</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {tickets.filter(t => t.code.toLowerCase().includes(searchQuery.toLowerCase())).map((row) => (
+              <TableRow key={row.id} hover selected={selectedIds.includes(row.id)}>
+                <TableCell padding="checkbox">
+                  <Checkbox size="small" checked={selectedIds.includes(row.id)} onChange={() => setSelectedIds(prev => prev.includes(row.id) ? prev.filter(i => i !== row.id) : [...prev, row.id])} />
+                </TableCell>
+                <TableCell sx={{ fontWeight: 700, color: '#0284c7' }}>{row.code}</TableCell>
+                <TableCell color="error">{row.fromStoreName}</TableCell>
+                <TableCell color="success">{row.toStoreName}</TableCell>
+                <TableCell align="center">{row.totalQuantity}</TableCell>
+                <TableCell>
+                  <Chip label={row.status} size="small" color={row.status === 'COMPLETED' ? 'success' : 'warning'} />
+                </TableCell>
+                <TableCell align="center">
+                  <IconButton onClick={() => { setSelectedTicket(row); setOpenDetail(true); }} color="info"><ViewIcon /></IconButton>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+        <Box sx={{ p: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <Pagination count={1} size="small" color="primary" />
+          <Typography variant="body2" color="textSecondary">Hiển thị {tickets.length} kết quả</Typography>
+        </Box>
+      </TableContainer>
+
+      {/* --- MODAL LẬP PHIẾU --- */}
+      <Dialog open={openCreate} onClose={() => setOpenCreate(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#3498db', color: 'white' }}>LẬP PHIẾU CHUYỂN KHO</DialogTitle>
+        <DialogContent dividers>
+          <Grid container spacing={2} sx={{ mt: 1 }}>
+            <Grid item xs={6}><Autocomplete options={stores} getOptionLabel={(o) => o.name} onChange={(_, v) => setFormRequest({...formRequest, fromStoreId: v?.id || null})} renderInput={(p) => <TextField {...p} label="Kho gửi hàng *" size="small" />}/></Grid>
+            <Grid item xs={6}><Autocomplete options={stores} getOptionLabel={(o) => o.name} onChange={(_, v) => setFormRequest({...formRequest, toStoreId: v?.id || null})} renderInput={(p) => <TextField {...p} label="Kho nhận hàng *" size="small" />}/></Grid>
+            <Grid item xs={12}><Autocomplete options={products} getOptionLabel={(o) => `[${o.sku}] ${o.variantName}`} onChange={(_, v) => v && setFormRequest({...formRequest, details: [...formRequest.details, { productVariantId: v.id, variantName: v.variantName, sku: v.sku, quantity: 1 }]})} renderInput={(p) => <TextField {...p} label="Tìm sản phẩm cần chuyển..." size="small" />}/></Grid>
+          </Grid>
+          <Box sx={{ mt: 3 }}>
+            {formRequest.details.map((item, idx) => (
+              <Box key={idx} sx={{ display: 'flex', gap: 2, mb: 1, p: 1.5, bgcolor: '#f8fafc', borderRadius: '10px', alignItems: 'center' }}>
+                <Typography sx={{ flexGrow: 1 }}><b>{item.variantName}</b> ({item.sku})</Typography>
+                <TextField type="number" size="small" value={item.quantity} onChange={(e) => {
+                  const val = Math.max(1, parseInt(e.target.value) || 1);
+                  const newD = [...formRequest.details]; newD[idx].quantity = val;
+                  setFormRequest({...formRequest, details: newD});
+                }} sx={{ width: 100 }} />
+                <IconButton onClick={() => setFormRequest({...formRequest, details: formRequest.details.filter((_, i) => i !== idx)})} color="error"><CloseIcon /></IconButton>
+              </Box>
+            ))}
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenCreate(false)}>Hủy</Button>
+          <Button variant="contained" color="success" onClick={handleSaveTransfer} startIcon={<SaveIcon />}>Lưu Phiếu</Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };
