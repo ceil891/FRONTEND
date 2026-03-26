@@ -24,7 +24,7 @@ import {
 import { useAuthStore } from '../../store/authStore';
 import { UserRole } from '../../types';
 import { Chatbot } from '../Chatbot/Chatbot';
-
+import { useFilterStore } from '../../store/filterStore';
 const drawerWidth = 280;
 
 interface MenuItemCustom {
@@ -39,7 +39,8 @@ export const DashboardLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [showChatbot, setShowChatbot] = useState(false);
-  
+  const { selectedStoreId, setSelectedStoreId } = useFilterStore();
+  const [stores, setStores] = useState<any[]>([]);
   // ✅ FIX 1: Khởi tạo openMenus rỗng
   const [openMenus, setOpenMenus] = useState<{ [key: string]: boolean }>({});
   
@@ -271,37 +272,42 @@ export const DashboardLayout: React.FC = () => {
           </Typography>
 
           {/* ✅ FIX 2: THÊM STORE SWITCHER CỰC XỊN Ở ĐÂY */}
-          <FormControl size="small" sx={{ mr: 3, minWidth: 200, display: { xs: 'none', md: 'flex' } }}>
+         <FormControl size="small" sx={{ mr: 3, minWidth: 220 }}>
             <Select
-              value={currentStore}
-              onChange={(e) => setCurrentStore(e.target.value)}
+              value={selectedStoreId}
+              onChange={(e) => setSelectedStoreId(e.target.value)}
               displayEmpty
-              sx={{ 
-                bgcolor: '#f8fafc', 
-                borderRadius: 2,
-                fontWeight: 600,
-                color: '#0f172a',
-                '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' },
-                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' },
-                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#1976d2' }
-              }}
-              renderValue={(value) => {
-                return (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                    <StorefrontIcon fontSize="small" color="primary" />
-                    {value === 'store1' ? 'Cửa hàng Hà Nội' : value === 'store2' ? 'Cửa hàng Hồ Chí Minh' : 'Chọn cửa hàng'}
-                  </Box>
-                );
-              }}
+              sx={{ bgcolor: '#f8fafc', borderRadius: 2, fontWeight: 600 }}
+              renderValue={(value) => (
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <StorefrontIcon fontSize="small" color="primary" />
+                  {/* Tìm tên cửa hàng dựa trên ID đang chọn */}
+                  {stores.find(s => s.id === value)?.name || 'Tất cả hệ thống'}
+                </Box>
+              )}
             >
-              <MenuItem value="store1">Cửa hàng Hà Nội</MenuItem>
-              <MenuItem value="store2">Cửa hàng Hồ Chí Minh</MenuItem>
+              <MenuItem value="">Tất cả hệ thống</MenuItem>
+              {stores.map(s => (
+                <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>
+              ))}
             </Select>
           </FormControl>
-
-          <IconButton color="primary" onClick={() => setShowChatbot(!showChatbot)} sx={{ bgcolor: 'rgba(25, 118, 210, 0.1)', mr: 2 }}>
-            <SmartToyIcon />
-          </IconButton>
+<IconButton 
+  onClick={() => setShowChatbot(!showChatbot)} 
+  sx={{ 
+    bgcolor: 'rgba(16, 185, 129, 0.12)', // Nền xanh lá nhạt
+    color: '#10b981',                   // Màu icon xanh Emerald đậm
+    mr: 2,
+    border: '1px solid rgba(16, 185, 129, 0.2)', // Viền mảnh cho sang
+    '&:hover': {
+      bgcolor: 'rgba(16, 185, 129, 0.25)', // Đậm hơn khi di chuột vào
+      transform: 'scale(1.1)',             // Phóng to nhẹ khi hover
+      transition: 'all 0.2s'
+    }
+  }}
+>
+  <SmartToyIcon />
+</IconButton>
           
           <Box sx={{ display: 'flex', alignItems: 'center', borderLeft: '1px solid #e2e8f0', pl: 2 }}>
             <Box sx={{ display: { xs: 'none', md: 'flex' }, flexDirection: 'column', alignItems: 'flex-end', mr: 1.5 }}>

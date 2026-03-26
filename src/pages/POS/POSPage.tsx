@@ -2,20 +2,19 @@ import React, { useState, useEffect, useMemo } from 'react';
 import {
   Grid, Card, CardContent, TextField, Button, Typography, Box, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, IconButton, Chip, InputAdornment,
-  CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions 
+  CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Select, MenuItem, Divider, Stack
 } from '@mui/material';
 import {
   Add as AddIcon, Remove as RemoveIcon, Delete as DeleteIcon, Search as SearchIcon,
   Print as PrintIcon, Payment as PaymentIcon, Storefront as StoreIcon, ArrowBack as ArrowBackIcon,
-  AccountCircle as AccountIcon
+  AccountCircle as AccountIcon, LocalOffer as PromoIcon
 } from '@mui/icons-material';
-import { Product, OrderDetail, PaymentMethod, Promotion } from '../../types';
-import { useToastStore } from '../../store/toastStore';
 
+import { PaymentMethod } from '../../types';
+import { useToastStore } from '../../store/toastStore';
 import { generateReceiptHTML } from '../../utils/receiptTemplate';
 import { useAuthStore } from '../../store/authStore';
-
-import { storeAPI, productAPI, orderAPI, loyaltyAPI } from '../../api/client'; 
+import { storeAPI, productAPI, orderAPI, loyaltyAPI, promotionAPI } from '../../api/client'; 
 
 interface BackendStore {
   id: number;
@@ -31,14 +30,14 @@ export const POSPage: React.FC = () => {
   const [cart, setCart] = useState<any[]>([]); 
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
   
-  // 🟢 THÊM STATE TIỀN KHÁCH ĐƯA 🟢
   const [customerCash, setCustomerCash] = useState<number | ''>('');
-
-  const [promoCode, setPromoCode] = useState('');
-  const [appliedPromotion, setAppliedPromotion] = useState<Promotion | null>(null);
+  
+  // 🟢 STATE CHỨA DANH SÁCH KHUYẾN MÃI TỪ BACKEND 🟢
+  const [promotions, setPromotions] = useState<any[]>([]);
+  const [appliedPromotion, setAppliedPromotion] = useState<any | null>(null);
   
   const [openQRDialog, setOpenQRDialog] = useState(false);
-  
+  const [openCashDialog, setOpenCashDialog] = useState(false);
   const [variantDialogOpen, setVariantDialogOpen] = useState(false);
   const [currentProduct, setCurrentProduct] = useState<any>(null);
 
@@ -58,10 +57,8 @@ export const POSPage: React.FC = () => {
     if (Array.isArray(urls) && urls.length > 0) return urls[0];
     if (typeof urls === 'string') {
       if (urls.startsWith('[')) {
-        try {
-          const parsed = JSON.parse(urls);
-          return parsed.length > 0 ? parsed[0] : 'https://via.placeholder.com/150?text=No+Image';
-        } catch (e) { return 'https://via.placeholder.com/150?text=No+Image'; }
+        try { return JSON.parse(urls).length > 0 ? JSON.parse(urls)[0] : 'https://via.placeholder.com/150?text=No+Image'; } 
+        catch (e) { return 'https://via.placeholder.com/150?text=No+Image'; }
       }
       return urls;
     }
@@ -70,30 +67,39 @@ export const POSPage: React.FC = () => {
 
   const mapBackendToProduct = (sp: any) => {
     return {
-      ...sp, 
-      id: String(sp.id || sp.sanPhamId),
-      code: sp.code || sp.maSku,
-      name: sp.name || sp.tenSanPham,
-      price: Number(sp.baseRetailPrice ?? sp.giaBan ?? sp.price ?? 0),
-      unit: sp.unitName || 'Cái', 
+      ...sp, id: String(sp.id || sp.sanPhamId), code: sp.code || sp.maSku, name: sp.name || sp.tenSanPham,
+      price: Number(sp.baseRetailPrice ?? sp.giaBan ?? sp.price ?? 0), unit: sp.unitName || 'Cái', 
       categoryId: sp.categoryId || (sp.danhMuc ? sp.danhMuc.id : null),
-      isActive: sp.status === 'ACTIVE' || sp.hoatDong !== false,
-      variants: sp.variants || [], 
+      isActive: sp.status === 'ACTIVE' || sp.hoatDong !== false, variants: sp.variants || [], 
       imageUrls: sp.imageUrls || sp.hinhAnhUrls || [] 
+    };
+  };
+
+  const mapBackendToPromotion = (p: any) => {
+    return {
+      id: String(p.id || p.khuyenMaiId),
+      code: p.code || p.maKM || p.maKm || '',
+      name: p.name || p.tenChuongTrinh || p.code || '',
+      discountType: p.discountType || (p.loaiGiam === '%' ? 'PERCENTAGE' : 'FIXED'),
+      discountValue: Number(p.discountValue || p.giaTri || 0),
+      minPurchase: Number(p.minPurchase || p.donToiThieu || 0),
+      maxDiscount: Number(p.maxDiscount || p.giamToiDa || 0),
+      isActive: p.status === 'ACTIVE' || p.trangThai === 'Đang chạy' || p.isActive !== false
     };
   };
 
   const loadInitialData = async () => {
     try {
       setLoading(true);
-      const [storeRes, prodRes, configRes] = await Promise.all([
+      const [storeRes, prodRes, configRes, promoRes] = await Promise.all([
         storeAPI.getAll().catch(() => ({ data: { data: [] } })),
         productAPI.getAll().catch(() => ({ data: [] })),
-        loyaltyAPI.getConfig().catch(() => null)
+        loyaltyAPI.getConfig().catch(() => null),
+        promotionAPI.getAll().catch(() => ({ data: [] }))
       ]);
       
       setStores(storeRes.data?.data || []);
-
+      
       if (configRes?.data?.success && configRes.data.data) {
         setLoyaltyConfig({
           exchangeRateEarn: configRes.data.data.exchangeRateEarn || 100000,
@@ -105,21 +111,20 @@ export const POSPage: React.FC = () => {
       const rawProd = prodRes.data;
       if (Array.isArray(rawProd)) listSP = rawProd;
       else if (rawProd && typeof rawProd === 'object') listSP = (rawProd as any).data || (rawProd as any).content || [];
-
       setProducts(listSP.map(mapBackendToProduct).filter(p => p.isActive));
 
-    } catch (err) {
-      showToast('Lỗi tải dữ liệu hệ thống', 'error');
-    } finally {
-      setLoading(false);
-    }
+      let listPromo: any[] = [];
+      const rawPromo = promoRes.data;
+      if (Array.isArray(rawPromo?.data)) listPromo = rawPromo.data;
+      else if (Array.isArray(rawPromo)) listPromo = rawPromo;
+      else if (rawPromo?.content) listPromo = rawPromo.content;
+      
+      setPromotions(listPromo.map(mapBackendToPromotion).filter(p => p.isActive));
+
+    } catch (err) { showToast('Lỗi tải dữ liệu', 'error'); } finally { setLoading(false); }
   };
 
   useEffect(() => { void loadInitialData(); }, []);
-
-  const mockPromotions: Promotion[] = [
-    { id: '1', code: 'GIAM10', name: 'Giảm 10%', discountType: 'PERCENTAGE', discountValue: 10, minPurchase: 100000, maxDiscount: 50000, startDate: new Date(), endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), isActive: true, createdAt: new Date(), updatedAt: new Date() },
-  ];
 
   const handleFindCustomer = async () => {
     if (!customerPhone.trim()) return showToast('Vui lòng nhập SĐT', 'warning');
@@ -147,60 +152,58 @@ export const POSPage: React.FC = () => {
     let calcDiscount = 0;
     
     if (appliedPromotion) {
-      if (appliedPromotion.discountType === 'PERCENTAGE') {
+      if (appliedPromotion.discountType === 'PERCENTAGE' || appliedPromotion.discountType === '%') {
         calcDiscount = (calcSubtotal * appliedPromotion.discountValue) / 100;
         if (appliedPromotion.maxDiscount && calcDiscount > appliedPromotion.maxDiscount) calcDiscount = appliedPromotion.maxDiscount;
-      } else {
-        calcDiscount = appliedPromotion.discountValue;
-      }
+      } else { calcDiscount = appliedPromotion.discountValue; }
     }
     
     const pointDiscount = (pointsToUse || 0) * loyaltyConfig.exchangeRateRedeem;
     calcDiscount += pointDiscount;
+
+    if (appliedPromotion && appliedPromotion.minPurchase && calcSubtotal < appliedPromotion.minPurchase) {
+      setAppliedPromotion(null);
+    }
+
     return { subtotal: calcSubtotal, discount: calcDiscount, total: Math.max(0, calcSubtotal - calcDiscount) };
   }, [cart, appliedPromotion, pointsToUse, loyaltyConfig]);
 
-  const applyPromotion = () => {
-    if (!promoCode.trim()) return showToast('Vui lòng nhập mã', 'warning');
-    const promotion = mockPromotions.find(p => p.code.toUpperCase() === promoCode.toUpperCase() && p.isActive);
-    if (!promotion) return showToast('Mã không hợp lệ', 'error');
-    if (promotion.minPurchase && subtotal < promotion.minPurchase) return showToast(`Đơn tối thiểu ${formatCurrency(promotion.minPurchase)}`, 'warning');
-    
-    setAppliedPromotion(promotion);
-    showToast('Đã áp dụng mã!', 'success');
-  };
-
-  const removePromotion = () => { setAppliedPromotion(null); setPromoCode(''); };
-
   const handleProductClick = (product: any) => {
     const variants = product.variants || [];
-    if (variants.length === 0) {
-      return showToast('Sản phẩm này chưa có biến thể (màu/size). Không thể bán!', 'error');
-    }
+    if (variants.length === 0) return showToast('Sản phẩm chưa có biến thể!', 'error');
     if (variants.length === 1) {
+      if (variants[0].quantity <= 0) return showToast('Sản phẩm này đã hết hàng!', 'error');
       addVariantToCart(product, variants[0]);
-    } else {
-      setCurrentProduct(product);
-      setVariantDialogOpen(true);
     }
+    else { setCurrentProduct(product); setVariantDialogOpen(true); }
   };
 
   const addVariantToCart = (product: any, variant: any) => {
+    if (variant.quantity <= 0) return showToast('Sản phẩm này đã hết hàng!', 'error');
+
     const existingItem = cart.find(item => item.variantId === variant.id);
     if (existingItem) {
+      if (existingItem.quantity + 1 > variant.quantity) {
+        return showToast(`Chỉ còn ${variant.quantity} sản phẩm trong kho!`, 'warning');
+      }
       setCart(cart.map(item => item.variantId === variant.id ? { ...item, quantity: item.quantity + 1, total: (item.quantity + 1) * item.unitPrice } : item));
     } else {
       const attrName = [variant.colorName, variant.sizeName].filter(Boolean).join(' - ') || variant.sku;
       const finalName = `${product.name} (${attrName})`;
       const finalPrice = variant.sellPrice || product.price;
-      setCart([...cart, { id: `cart-v${variant.id}`, productId: product.id, variantId: variant.id, productName: finalName, quantity: 1, unitPrice: finalPrice, discount: 0, total: finalPrice }]);
+      setCart([...cart, { id: `cart-v${variant.id}`, productId: product.id, variantId: variant.id, productName: finalName, quantity: 1, unitPrice: finalPrice, discount: 0, total: finalPrice, maxStock: variant.quantity }]);
     }
   };
 
   const updateQuantity = (id: string, delta: number) => {
     setCart(cart.map(item => {
       if (item.id === id) {
-        const newQuantity = Math.max(1, item.quantity + delta);
+        let newQuantity = item.quantity + delta;
+        if (newQuantity < 1) newQuantity = 1;
+        if (newQuantity > item.maxStock) {
+          showToast(`Kho chỉ còn ${item.maxStock} sản phẩm!`, 'warning');
+          newQuantity = item.maxStock;
+        }
         return { ...item, quantity: newQuantity, total: newQuantity * item.unitPrice - item.discount };
       }
       return item;
@@ -209,25 +212,31 @@ export const POSPage: React.FC = () => {
 
   const removeFromCart = (id: string) => setCart(cart.filter(item => item.id !== id));
 
+  const handleCheckoutClick = () => {
+    if (cart.length === 0) return showToast('Giỏ hàng trống', 'warning');
+    
+    if (paymentMethod === PaymentMethod.CASH) {
+      if (customerCash === '' || Number(customerCash) < total) {
+        return showToast('Vui lòng nhập đủ số tiền khách đưa!', 'error');
+      }
+      setOpenCashDialog(true); 
+    } else {
+      setOpenQRDialog(true); 
+    }
+  };
+
   const submitOrderToDatabase = async () => {
     if (!selectedStore) return showToast('Chưa chọn cửa hàng', 'error');
     if (!user || !user.id) return showToast('Lỗi: Chưa đăng nhập', 'error');
-    if (paymentMethod === PaymentMethod.CASH && customerCash !== '' && Number(customerCash) < total) {
-      return showToast('Tiền khách đưa không đủ!', 'error');
-    }
 
     try {
       setLoading(true);
       const orderPayload = {
         orderType: 'RETAIL', 
         paymentMethod: paymentMethod === PaymentMethod.QR_CODE ? 'BANK_TRANSFER' : paymentMethod,
-        shippingFee: 0,
-        customerId: selectedCustomer?.id || null, 
-        discount: discount, 
-        items: cart.map(item => ({
-          productVariantId: Number(item.variantId), 
-          quantity: item.quantity
-        }))
+        shippingFee: 0, customerId: selectedCustomer?.id || null, discount: discount, storeId: selectedStore.id, 
+        promotionId: appliedPromotion ? Number(appliedPromotion.id) : null,
+        items: cart.map(item => ({ productVariantId: Number(item.variantId), quantity: item.quantity }))
       };
 
       await orderAPI.create(orderPayload as any); 
@@ -241,40 +250,27 @@ export const POSPage: React.FC = () => {
         formData.append('hinhThuc', paymentMethod === PaymentMethod.QR_CODE ? 'Chuyển khoản' : 'Tiền mặt');
         formData.append('sanPham', cart.map(item => `${item.productName} (x${item.quantity})`).join(', '));
         if (selectedCustomer) formData.append('khachHang', selectedCustomer.fullName);
-
-        await fetch('https://script.google.com/macros/s/AKfycbzl5yAluSPScYslJtEbmoFP8X5v30M1ocxtQE_yq6K9k3utG7XsaVafssSFWo4kUPBElg/exec', { 
-          method: 'POST', body: formData, mode: 'no-cors' 
-        });
+        await fetch('https://script.google.com/macros/s/AKfycbzl5yAluSPScYslJtEbmoFP8X5v30M1ocxtQE_yq6K9k3utG7XsaVafssSFWo4kUPBElg/exec', { method: 'POST', body: formData, mode: 'no-cors' });
       } catch (sheetErr) { console.error(sheetErr); }
 
       showToast(`Thanh toán thành công!`, 'success');
       
-      // RESET POS SAU KHI XONG
-      setCart([]); setAppliedPromotion(null); setPromoCode(''); setOpenQRDialog(false); 
+      setCart([]); setAppliedPromotion(null); setOpenQRDialog(false); setOpenCashDialog(false);
       setSelectedCustomer(null); setPointsToUse(0); setCustomerPhone(''); setCustomerCash('');
-    } catch (err: any) {
-      showToast('Lỗi khi thanh toán: ' + (err.response?.data?.message || err.message), 'error');
-    } finally { setLoading(false); }
-  };
-
-  const handleCheckoutClick = () => {
-    if (cart.length === 0) return showToast('Giỏ hàng trống', 'warning');
-    if (paymentMethod === PaymentMethod.QR_CODE) setOpenQRDialog(true); 
-    else submitOrderToDatabase(); 
+    } catch (err: any) { showToast('Lỗi khi thanh toán: ' + (err.response?.data?.message || err.message), 'error'); } 
+    finally { setLoading(false); }
   };
 
   const handlePrintReceipt = () => {
     if (cart.length === 0) return showToast('Chưa có sản phẩm để in', 'warning');
     const printWindow = window.open('', '_blank');
     if (!printWindow) return showToast('Vui lòng cho phép popup để in', 'error');
-    const htmlContent = generateReceiptHTML(cart, subtotal, discount, total);
+    const htmlContent = generateReceiptHTML(cart, subtotal, discount, total, selectedStore);
     printWindow.document.open(); printWindow.document.write(htmlContent); printWindow.document.close();
     printWindow.focus(); setTimeout(() => { printWindow.print(); printWindow.close(); }, 250);
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
-  };
+  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
   if (!selectedStore) {
     return (
@@ -355,9 +351,7 @@ export const POSPage: React.FC = () => {
 
               <Box sx={{ flex: 1, overflowY: 'auto', mx: -2, px: 2 }}>
                 {cart.length === 0 ? (
-                  <Box sx={{ textAlign: 'center', py: 8 }}>
-                    <Typography color="text.secondary" sx={{ fontWeight: 500 }}>Giỏ hàng trống</Typography>
-                  </Box>
+                  <Box sx={{ textAlign: 'center', py: 8 }}><Typography color="text.secondary" sx={{ fontWeight: 500 }}>Giỏ hàng trống</Typography></Box>
                 ) : (
                   <TableContainer>
                     <Table size="small">
@@ -397,7 +391,7 @@ export const POSPage: React.FC = () => {
                   ) : (
                     <Box sx={{ p: 1.5, bgcolor: '#f0f9ff', borderRadius: 1.5, border: '1px solid #bae6fd' }}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 0.5 }}>
-                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#0369a1' }}>{selectedCustomer.fullName}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 700, color: '#0369a1' }}>👤 {selectedCustomer.fullName}</Typography>
                         <IconButton size="small" onClick={() => { setSelectedCustomer(null); setPointsToUse(0); setCustomerPhone(''); }} sx={{ p: 0 }}><DeleteIcon fontSize="small" color="error" /></IconButton>
                       </Box>
                       {selectedCustomer.currentPoints > 0 && (
@@ -408,6 +402,28 @@ export const POSPage: React.FC = () => {
                       )}
                     </Box>
                   )}
+                </Box>
+
+                <Box sx={{ mb: 2 }}>
+                  <Select 
+                    fullWidth size="small" displayEmpty 
+                    value={appliedPromotion ? appliedPromotion.id : ''}
+                    onChange={(e) => {
+                      const promo = promotions.find(p => p.id === e.target.value);
+                      setAppliedPromotion(promo || null);
+                      if (promo) showToast(`Đã áp mã: ${promo.name}`, 'success');
+                    }}
+                    startAdornment={<InputAdornment position="start"><PromoIcon fontSize="small" color="primary" /></InputAdornment>}
+                    sx={{ borderRadius: 1.5, bgcolor: '#f8fafc', fontSize: '14px', '& .MuiSelect-select': { py: 1 } }}
+                  >
+                    <MenuItem value=""><em>-- Áp dụng mã khuyến mãi --</em></MenuItem>
+                    {promotions.map(promo => (
+                      <MenuItem key={promo.id} value={promo.id} disabled={subtotal < (promo.minPurchase || 0)}>
+                        Mã {promo.code} ({promo.discountType === 'PERCENTAGE' ? `Giảm ${promo.discountValue}%` : `Giảm ${formatCurrency(promo.discountValue)}`})
+                        {subtotal < (promo.minPurchase || 0) && ` - Cần mua thêm ${formatCurrency((promo.minPurchase || 0) - subtotal)}`}
+                      </MenuItem>
+                    ))}
+                  </Select>
                 </Box>
 
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
@@ -421,31 +437,22 @@ export const POSPage: React.FC = () => {
                   </Box>
                 )}
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, mt: 1, alignItems: 'center' }}>
-                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>Khách trả:</Typography>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, color: '#0f172a' }}>Khách phải trả:</Typography>
                   <Typography variant="h5" sx={{ fontWeight: 800, color: '#dc2626' }}>{formatCurrency(total)}</Typography>
                 </Box>
 
-                {/* 🟢 TÍNH TIỀN THỪA NẾU LÀ TIỀN MẶT 🟢 */}
                 {paymentMethod === PaymentMethod.CASH && (
-                  <>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>Tiền khách đưa:</Typography>
-                      <TextField 
-                        size="small" 
-                        type="number" 
-                        placeholder="Nhập số tiền..."
-                        value={customerCash} 
-                        onChange={(e) => setCustomerCash(Number(e.target.value))} 
-                        sx={{ width: 140, '& .MuiInputBase-root': { height: '32px' }, input: { textAlign: 'right', fontWeight: 'bold' } }} 
-                      />
-                    </Box>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2, alignItems: 'center' }}>
-                      <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>Tiền thừa:</Typography>
-                      <Typography variant="body1" sx={{ fontWeight: 700, color: (Number(customerCash) - total) >= 0 ? '#16a34a' : '#ef4444' }}>
-                        {customerCash === '' ? '0đ' : formatCurrency(Number(customerCash) - total)}
-                      </Typography>
-                    </Box>
-                  </>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1.5, alignItems: 'center' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 600, color: '#0f172a' }}>Tiền khách đưa:</Typography>
+                    <TextField 
+                      size="small" type="text" placeholder="Nhập số tiền..." value={customerCash} 
+                      onChange={(e) => {
+                        const cleanValue = e.target.value.replace(/\D/g, '');
+                        setCustomerCash(cleanValue === '' ? '' : Number(cleanValue));
+                      }} 
+                      sx={{ width: 140, '& .MuiInputBase-root': { height: '32px' }, input: { textAlign: 'right', fontWeight: 'bold' } }} 
+                    />
+                  </Box>
                 )}
 
                 <Box sx={{ mb: 2, display: 'flex', gap: 1 }}>
@@ -457,11 +464,9 @@ export const POSPage: React.FC = () => {
                   {loading ? 'ĐANG XỬ LÝ...' : 'THANH TOÁN'}
                 </Button>
 
-                {/* 🟢 NÚT IN HÓA ĐƠN ĐÃ QUAY LẠI 🟢 */}
                 <Button fullWidth variant="outlined" size="large" startIcon={<PrintIcon />} onClick={handlePrintReceipt} sx={{ py: 1.2, fontWeight: 700, borderRadius: 2, borderWidth: '2px !important', color: '#475569', borderColor: '#cbd5e1' }}>
                   IN HÓA ĐƠN
                 </Button>
-
               </Box>
             </CardContent>
           </Card>
@@ -470,37 +475,51 @@ export const POSPage: React.FC = () => {
 
       {/* POPUP CHỌN PHÂN LOẠI */}
       <Dialog open={variantDialogOpen} onClose={() => setVariantDialogOpen(false)} maxWidth="sm" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: 3 } }}>
-        <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #e2e8f0', pb: 2 }}>
-          Chọn phân loại: {currentProduct?.name}
-        </DialogTitle>
+        <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #e2e8f0', pb: 2 }}>Chọn phân loại: {currentProduct?.name}</DialogTitle>
         <DialogContent sx={{ p: 3 }}>
           <Grid container spacing={2}>
             {currentProduct?.variants?.map((v: any) => (
               <Grid item xs={12} sm={6} key={v.id}>
-                <Button 
-                  fullWidth variant="outlined" 
-                  onClick={() => { addVariantToCart(currentProduct, v); setVariantDialogOpen(false); }}
+                <Button fullWidth variant="outlined" onClick={() => { addVariantToCart(currentProduct, v); setVariantDialogOpen(false); }}
                   disabled={v.quantity <= 0}
                   sx={{ justifyContent: 'flex-start', textAlign: 'left', p: 1.5, borderRadius: 2, height: '100%', borderColor: '#cbd5e1', '&:hover': { bgcolor: '#f0f9ff', borderColor: '#0ea5e9' } }}
                 >
                   <Box>
-                    <Typography variant="body1" fontWeight="700" color="#0f172a" mb={0.5}>
-                      {[v.colorName, v.sizeName].filter(Boolean).join(' - ') || v.sku}
-                    </Typography>
-                    <Typography variant="body2" color="#dc2626" fontWeight="bold">
-                      {formatCurrency(v.sellPrice || currentProduct?.price)}
-                    </Typography>
-                    <Typography variant="caption" color="text.secondary">
-                      Tồn kho: {v.quantity}
-                    </Typography>
+                    <Typography variant="body1" fontWeight="700" color={v.quantity <= 0 ? 'text.disabled' : '#0f172a'} mb={0.5}>{[v.colorName, v.sizeName].filter(Boolean).join(' - ') || v.sku}</Typography>
+                    <Typography variant="body2" color={v.quantity <= 0 ? 'text.disabled' : '#dc2626'} fontWeight="bold">{formatCurrency(v.sellPrice || currentProduct?.price)}</Typography>
+                    <Typography variant="caption" color={v.quantity <= 0 ? 'error' : 'text.secondary'}>{v.quantity <= 0 ? 'Hết hàng' : `Tồn kho: ${v.quantity}`}</Typography>
                   </Box>
                 </Button>
               </Grid>
             ))}
           </Grid>
         </DialogContent>
-        <DialogActions sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}>
-          <Button onClick={() => setVariantDialogOpen(false)} color="inherit" sx={{ fontWeight: 600 }}>Hủy</Button>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}><Button onClick={() => setVariantDialogOpen(false)} color="inherit" sx={{ fontWeight: 600 }}>Hủy</Button></DialogActions>
+      </Dialog>
+
+      {/* POPUP XÁC NHẬN THANH TOÁN TIỀN MẶT */}
+      <Dialog open={openCashDialog} onClose={() => setOpenCashDialog(false)} maxWidth="xs" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: 3 } }}>
+        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', borderBottom: '1px solid #e2e8f0', pb: 2 }}>Xác Nhận Thanh Toán</DialogTitle>
+        <DialogContent sx={{ p: 3 }}>
+          <Stack spacing={2} mt={1}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography color="text.secondary" fontWeight={500}>Khách phải trả:</Typography>
+              <Typography fontWeight={800} color="#dc2626" fontSize="1.1rem">{formatCurrency(total)}</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+              <Typography color="text.secondary" fontWeight={500}>Tiền khách đưa:</Typography>
+              <Typography fontWeight={700}>{formatCurrency(Number(customerCash))}</Typography>
+            </Box>
+            <Divider sx={{ borderStyle: 'dashed' }} />
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', bgcolor: '#f0fdf4', p: 1.5, borderRadius: 2, border: '1px solid #bbf7d0' }}>
+              <Typography fontWeight={700} color="#166534">Tiền thừa trả khách:</Typography>
+              <Typography fontWeight={800} color="#16a34a" fontSize="1.1rem">{formatCurrency(Number(customerCash) - total)}</Typography>
+            </Box>
+          </Stack>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, borderTop: '1px solid #e2e8f0', justifyContent: 'center', gap: 2 }}>
+          <Button variant="outlined" onClick={() => setOpenCashDialog(false)} color="inherit" sx={{ fontWeight: 600, width: 120, borderRadius: 2 }}>Quay lại</Button>
+          <Button variant="contained" onClick={submitOrderToDatabase} color="primary" disabled={loading} sx={{ fontWeight: 700, width: 120, borderRadius: 2 }}>{loading ? 'Đang xử lý...' : 'Xác Nhận'}</Button>
         </DialogActions>
       </Dialog>
 
@@ -512,11 +531,10 @@ export const POSPage: React.FC = () => {
           <Box component="img" src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=ThanhToanPOS&accountName=NGUYEN%20LUU%20HUNG`} alt="QR Code" sx={{ width: 250, height: 250, border: '2px solid #e2e8f0', borderRadius: 2, p: 1 }} />
         </DialogContent>
         <DialogActions sx={{ justifyContent: 'center', pb: 3, gap: 2, pt: 0 }}>
-          <Button variant="outlined" color="error" onClick={() => setOpenQRDialog(false)} disabled={loading}>Hủy Giao Dịch</Button>
+          <Button variant="outlined" color="error" onClick={() => setOpenQRDialog(false)} disabled={loading}>Hủy</Button>
           <Button variant="contained" color="success" onClick={submitOrderToDatabase} disabled={loading}>{loading ? 'Đang lưu...' : 'Đã Nhận Tiền'}</Button>
         </DialogActions>
       </Dialog>
-
     </Box>
   );
 };

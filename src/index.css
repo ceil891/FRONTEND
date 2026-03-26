@@ -81,3 +81,42 @@ html {
 .slide-in {
   animation: slideIn 0.5s ease-out;
 }
+/* ========================================= */
+/* 🖨️ CSS DÀNH RIÊNG CHO MÁY IN (PRINTING)  */
+/* ========================================= */
+@media print {
+  /* 1. Ẩn tất cả thanh Menu, Header, và các Nút bấm */
+  .MuiDrawer-root,          /* Thanh menu bên trái */
+  .MuiAppBar-root,          /* Thanh Header trên cùng */
+  button,                   /* Tất cả các nút bấm */
+  .MuiPagination-root,      /* Thanh phân trang */
+  .MuiInputBase-root {      /* Các ô tìm kiếm */
+    display: none !important;
+  }
+
+  /* 2. Mở rộng phần nội dung chính lấp đầy trang giấy A4 */
+  main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  /* 3. Ẩn các cột "Thao tác" (chứa nút Xem, Sửa, Xóa) trong bảng */
+  th:nth-child(1), td:nth-child(1), /* Ẩn cột Checkbox */
+  th:nth-child(2), td:nth-child(2)  /* Ẩn cột Thao tác */ {
+    display: none !important;
+  }
+
+  /* 4. Định dạng lại màu nền để máy in không in tốn mực đen */
+  body {
+    background-color: white !important;
+    color: black !important;
+  }
+  
+  /* Xóa đổ bóng của các Card để in ra phẳng, nét */
+  .MuiPaper-root {
+    box-shadow: none !important;
+    border: none !important;
+  }
+}
