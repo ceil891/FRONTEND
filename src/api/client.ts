@@ -138,6 +138,68 @@ export interface CashbookTransactionRequest {
 }
 
 // ==========================================
+// 2.1. DASHBOARD & ACTIVITY LOG TYPES
+// ==========================================
+export interface DashboardStatsResponse {
+  totalRevenue: number;
+  totalOrders: number;
+  totalProducts: number;
+  lowStockProducts: number;
+  pendingRecommendations: number;
+  revenueGrowth: number | null;
+  orderGrowth: number | null;
+}
+
+export interface ActivityLogResponse {
+  id: number;
+  userId: number | null;
+  action: string;
+  entityType: string | null;
+  entityId: string | null;
+  details: Record<string, unknown> | null;
+  ipAddress: string | null;
+  userAgent: string | null;
+  createdAt: string;
+}
+
+export interface PageResponse<T> {
+  content: T[];
+  totalPages: number;
+  totalElements: number;
+  size: number;
+  number: number;
+  first?: boolean;
+  last?: boolean;
+  empty?: boolean;
+}
+
+export interface RevenueReportResponse {
+  period: string;
+  revenue: number;
+  orders: number;
+  averageOrderValue: number;
+  profit: number;
+  profitMargin: number | null;
+}
+
+export interface ProductSalesReportResponse {
+  productId: number;
+  productName: string;
+  quantitySold: number;
+  revenue: number;
+  profit: number;
+}
+
+export interface StoreComparisonResponse {
+  storeId: number;
+  storeName: string;
+  revenue: number;
+  orders: number;
+  averageOrderValue: number;
+  growth: number | null;
+}
+
+// ==========================================
 // 3. DANH SÁCH CÁC API
 // ==========================================
 
@@ -335,6 +397,10 @@ export const transferTicketAPI = {
 export const returnTicketAPI = {
   getByType: (type: 'CUSTOMER_RETURN' | 'SUPPLIER_RETURN') => 
     apiClient.get<BackendBaseResponse<any[]>>(`/api/inventory/return-tickets/type/${type}`),
+  getAll: () => 
+    apiClient.get<BackendBaseResponse<any[]>>('/api/inventory/return-tickets'),
+
+ 
   
   getById: (id: number) => 
     apiClient.get<BackendBaseResponse<any>>(`/api/inventory/return-tickets/${id}`),
@@ -345,12 +411,83 @@ export const returnTicketAPI = {
   update: (id: number, data: any) => 
     apiClient.put<BackendBaseResponse<any>>(`/api/inventory/return-tickets/${id}`, data),
     
+  // 🟢 HÀM XÓA PHIẾU ĐÃ ĐƯỢC CHUẨN HÓA VỚI BACKEND 🟢
   delete: (id: number) => 
     apiClient.delete<BackendBaseResponse<void>>(`/api/inventory/return-tickets/${id}`),
 
-  // 🟢 THÊM HÀM CANCEL ĐỂ KHÔNG BỊ LỖI Ở TRANG KHÁCH TRẢ HÀNG 🟢
   cancel: (id: number) => 
     apiClient.put<BackendBaseResponse<any>>(`/api/inventory/return-tickets/${id}/cancel`),
 };
 
+
+// --- ACTIVITY LOG API (Audit Log) ---
+export const activityLogAPI = {
+  getAll: (params?: {
+    userId?: number;
+    action?: string;
+    entityType?: string;
+    search?: string;
+    page?: number;
+    size?: number;
+  }) =>
+    apiClient.get<BackendBaseResponse<PageResponse<ActivityLogResponse>>>(
+      '/api/v1/activity-logs',
+      { params }
+    ),
+};
+export const dashboardAPI = {
+  // 1. API GET Summary (Dùng cho 4 thẻ thống kê và đơn hàng gần đây)
+  getStats: (params?: { startDate?: string; endDate?: string; storeId?: number | string }) => 
+    apiClient.get<BackendBaseResponse<any>>('/api/dashboard/summary', { params }),
+
+  // 2. API POST Báo cáo hiệu suất cửa hàng
+  getStorePerformance: (data: { startDate: string; endDate: string; areaId?: number }) => 
+    apiClient.post<BackendBaseResponse<any>>('/api/dashboard/stores-performance', data),
+
+  // 3. API POST Xu hướng doanh thu theo cửa hàng (Dùng để vẽ biểu đồ)
+  getStoreTrend: (storeId: number, data: { startDate: string; endDate: string }) => 
+    apiClient.post<BackendBaseResponse<any>>(`/api/dashboard/store-trend/${storeId}`, data),
+};
+// --- REPORT API ---
+export const reportAPI = {
+  // 1. Báo cáo doanh thu (Dùng cho ProfitLossReport & StoreRevenueReport)
+  getRevenue: (params: { startDate: string; endDate: string; period?: string; storeId?: number }) => 
+    apiClient.get<BackendBaseResponse<any>>('/api/reports/revenue', { params }),
+
+  // 2. Hiệu suất bán hàng nhân viên (Fix lỗi ảnh 5a6bcc)
+  getEmployeePerformance: (params: { startDate: string, endDate: string, storeId?: number }) => 
+    apiClient.get<BackendBaseResponse<any[]>>('/api/reports/employee-performance', { params }),
+
+  // 3. Cơ cấu danh mục - Biểu đồ tròn (Fix lỗi ảnh 5ae42a)
+  getCategoryRatio: () => 
+    apiClient.get<BackendBaseResponse<any[]>>('/api/reports/category-ratio'),
+
+  // 4. Top sản phẩm bán chạy (Dùng cho SystemInventoryReport & TopProductsReport)
+  getProductSales: (params: { startDate?: string; endDate?: string; limit?: number; storeId?: number }) => 
+    apiClient.get<BackendBaseResponse<any>>('/api/reports/top-products', { params }),
+
+  // 5. So sánh hiệu suất cửa hàng (Dùng cho StorePerformanceReport)
+  getStoreComparison: (params: { startDate: string; endDate: string }) => 
+    apiClient.get<BackendBaseResponse<any>>('/api/reports/store-comparison', { params }),
+    
+  // 6. Báo cáo công nợ
+  getDebtReport: (params?: any) => 
+    apiClient.get<BackendBaseResponse<any>>('/api/reports/debt', { params }),
+};
+
+export const productPricingAPI = {
+  getAll: () => apiClient.get<BackendBaseResponse<ProductPricingResponse[]>>('/api/inventory/productPricings'),
+  
+  setup: (data: ProductPricingRequest) => 
+    apiClient.post<BackendBaseResponse<ProductPricingResponse>>('/api/inventory/productPricings/setup', data),
+    
+  approve: (id: number) => 
+    apiClient.put<BackendBaseResponse<string>>(`/api/inventory/productPricings/${id}/approve`),
+    
+  bulkApprove: (ids: number[]) => 
+    apiClient.post<BackendBaseResponse<string>>('/api/inventory/productPricings/bulk-approve', ids),
+    
+  delete: (id: number) => 
+    apiClient.delete<BackendBaseResponse<string>>(`/api/inventory/productPricings/${id}`),
+};
 export default apiClient;

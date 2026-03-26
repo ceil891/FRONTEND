@@ -13,19 +13,16 @@ import { returnTicketAPI, productAPI, storeAPI, customerAPI } from '../../api/cl
 import { useToastStore } from '../../store/toastStore';
 
 export const ReturnCustomerPage: React.FC = () => {
-  // --- STATES QUẢN LÝ DỮ LIỆU CHÍNH ---
   const [tickets, setTickets] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   
-  // --- STATES API & HEADER ---
   const [products, setProducts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [currentStoreId, setCurrentStoreId] = useState<number | string>('');
 
-  // --- STATES MODALS ---
   const [openCreate, setOpenCreate] = useState(false);
   const [openDetail, setOpenDetail] = useState(false);
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
@@ -45,58 +42,60 @@ export const ReturnCustomerPage: React.FC = () => {
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  // --- LẤY DỮ LIỆU TỪ BACKEND ---
   const fetchData = async () => {
     try {
       setLoading(true);
       const [ticketRes, prodRes, storeRes, custRes] = await Promise.all([
-        returnTicketAPI.getByType ? returnTicketAPI.getByType('CUSTOMER_RETURN') : returnTicketAPI.getAll(),
-        productAPI.getAll(),
-        storeAPI.getAll(),
-        customerAPI.getAll()
+        (returnTicketAPI?.getAll ? returnTicketAPI.getAll() : Promise.resolve({ data: [] })).catch(() => ({ data: [] })),
+        (productAPI?.getAll ? productAPI.getAll() : Promise.resolve({ data: [] })).catch(() => ({ data: [] })),
+        (storeAPI?.getAll ? storeAPI.getAll() : Promise.resolve({ data: { data: [] } })).catch(() => ({ data: { data: [] } })),
+        (customerAPI?.getAll ? customerAPI.getAll() : Promise.resolve({ data: [] })).catch(() => ({ data: [] }))
       ]);
       
       let fetchedTickets = ticketRes.data?.data || ticketRes.data || [];
-      if (!returnTicketAPI.getByType) {
-         fetchedTickets = fetchedTickets.filter((t: any) => t.type === 'CUSTOMER_RETURN');
-      }
+      fetchedTickets = fetchedTickets.filter((t: any) => t.returnType === 'CUSTOMER_RETURN');
       setTickets(fetchedTickets);
       
-      if (custRes.data?.success) setCustomers(custRes.data.data);
+      const fetchedCust = custRes.data?.data || custRes.data || [];
+      setCustomers(Array.isArray(fetchedCust) ? fetchedCust : []);
       
       const fetchedStores = storeRes.data?.data || storeRes.data || [];
-      setStores(fetchedStores);
-      if (fetchedStores.length > 0) setCurrentStoreId(fetchedStores[0].id);
+      setStores(Array.isArray(fetchedStores) ? fetchedStores : []);
+      if (Array.isArray(fetchedStores) && fetchedStores.length > 0) {
+          setCurrentStoreId(fetchedStores[0].id);
+      }
 
       const rawProducts = prodRes.data?.data || prodRes.data || [];
       const allVariants: any[] = [];
       
-      rawProducts.forEach((p: any) => {
-        const variantsList = p.variants || p.productVariants || [];
-        if (variantsList.length > 0) {
-          variantsList.forEach((v: any) => {
-            allVariants.push({
-              id: v.id,
-              variantName: `${p.name || ''} - ${v.variantName || ''}`.trim(),
-              sku: v.sku || 'Chưa có SKU',
-              price: v.baseRetailPrice || p.baseRetailPrice || 0,
-              quantity: v.quantity || 0,
+      if (Array.isArray(rawProducts)) {
+        rawProducts.forEach((p: any) => {
+          const variantsList = p.variants || p.productVariants || [];
+          if (variantsList.length > 0) {
+            variantsList.forEach((v: any) => {
+              allVariants.push({
+                id: v.id,
+                variantName: `${p.name || ''} - ${v.variantName || ''}`.trim(),
+                sku: v.sku || 'Chưa có SKU',
+                price: v.baseRetailPrice || p.baseRetailPrice || 0,
+                quantity: v.quantity || 0,
+              });
             });
-          });
-        } else if (p.sku || p.variantName || p.name) {
-          allVariants.push({
-            id: p.id,
-            variantName: p.variantName || p.name || 'Sản phẩm không tên',
-            sku: p.sku || 'Chưa có SKU',
-            price: p.baseRetailPrice || p.price || 0,
-            quantity: p.quantity || 0,
-          });
-        }
-      });
+          } else if (p.sku || p.variantName || p.name) {
+            allVariants.push({
+              id: p.id,
+              variantName: p.variantName || p.name || 'Sản phẩm không tên',
+              sku: p.sku || 'Chưa có SKU',
+              price: p.baseRetailPrice || p.price || 0,
+              quantity: p.quantity || 0,
+            });
+          }
+        });
+      }
       setProducts(allVariants);
 
     } catch (error) {
-      showToast('Lỗi tải dữ liệu khách trả hàng', 'error');
+      showToast('Lỗi nghiêm trọng khi tải dữ liệu!', 'error');
     } finally {
       setLoading(false);
     }
@@ -104,7 +103,6 @@ export const ReturnCustomerPage: React.FC = () => {
 
   useEffect(() => { fetchData(); }, []);
 
-  // --- LOGIC TÌM KIẾM & LỌC ---
   const filteredTickets = useMemo(() => {
     const kw = searchQuery.trim().toLowerCase();
     if (!kw) return tickets;
@@ -119,7 +117,6 @@ export const ReturnCustomerPage: React.FC = () => {
     return formRequest.details.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
   }, [formRequest.details]);
 
-  // --- LOGIC XỬ LÝ NÚT BẤM TOOLBAR ---
   const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.checked) setSelectedIds(filteredTickets.map(i => i.id));
     else setSelectedIds([]);
@@ -155,7 +152,6 @@ export const ReturnCustomerPage: React.FC = () => {
     }
   };
 
-  // --- LOGIC FORM NHẬN HÀNG TRẢ ---
   const handleAddProduct = (product: any) => {
     if (!product) return;
     if (formRequest.details.some(d => d.productVariantId === product.id)) {
@@ -189,6 +185,7 @@ export const ReturnCustomerPage: React.FC = () => {
     });
   };
 
+  // 🟢 ĐÃ SỬA HÀM LƯU: THÊM STORE_ID VÀO PAYLOAD 🟢
   const handleSave = async () => {
     if (!currentStoreId) return showToast("Vui lòng chọn cửa hàng trên Header!", "warning");
     if (!formRequest.storeId) return showToast("Vui lòng chọn kho nhận lại hàng trong form!", "warning");
@@ -197,10 +194,24 @@ export const ReturnCustomerPage: React.FC = () => {
     try {
       setSubmitting(true);
       const payload = { 
-        ...formRequest, 
-        storeId: currentStoreId,
-        totalRefundAmount: calculatedTotal
+        returnType: "CUSTOMER_RETURN", 
+        originalDocCode: formRequest.originalDocCode,           
+        customerId: null, // Có thể map với customerId nếu có
+        supplierId: null, 
+        
+        // 🟢 BẮT BUỘC PHẢI CÓ DÒNG NÀY ĐỂ TRUYỀN XUỐNG JAVA 🟢
+        storeId: Number(currentStoreId), 
+        
+        reason: formRequest.reason || "Khách trả hàng",
+        paymentMethod: "CASH", 
+        details: formRequest.details.map(item => ({
+          productVariantId: Number(item.productVariantId), 
+          returnQuantity: Number(item.quantity),           
+          returnPrice: Number(item.unitPrice),           
+          conditionNote: "" 
+        }))
       }; 
+
       const res = await returnTicketAPI.create(payload);
       if (res.data?.success || res.data) {
         showToast("Lập phiếu nhận hàng trả thành công!", "success");

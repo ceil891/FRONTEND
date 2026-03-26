@@ -19,7 +19,6 @@ export const OrderHistoryPage: React.FC = () => {
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  // Cập nhật lại logic Chip cho khớp với orderType (RETAIL / ONLINE) từ Backend
   const renderTypeChip = (type: string) => {
     const isOnline = type === 'ONLINE';
     return (
@@ -41,7 +40,6 @@ export const OrderHistoryPage: React.FC = () => {
       setLoading(true);
       const res = await orderAPI.query({ type: 'HISTORY' });
       const data = res.data?.data || res.data || [];
-      // Đảm bảo dữ liệu là mảng trước khi setRows
       setRows(Array.isArray(data) ? data : []);
     } catch (err) {
       showToast('Lỗi tải lịch sử', 'error');
@@ -52,12 +50,12 @@ export const OrderHistoryPage: React.FC = () => {
 
   useEffect(() => { loadData(); }, []);
 
-  // Cập nhật lại các trường tìm kiếm khớp với Backend
+  // 🟢 ĐÃ SỬA: Thêm r.storeName vào logic tìm kiếm
   const filtered = useMemo(() => {
     const kw = searchQuery.trim().toLowerCase();
     if (!kw) return rows;
     return rows.filter((r) => 
-      [r.orderNumber, r.customerName, r.employeeName, r.customerPhone]
+      [r.orderNumber, r.customerName, r.employeeName, r.customerPhone, r.storeName]
         .some(v => String(v || '').toLowerCase().includes(kw))
     );
   }, [rows, searchQuery]);
@@ -76,7 +74,7 @@ export const OrderHistoryPage: React.FC = () => {
         <Box sx={{ p: 2, borderBottom: '1px solid #f1f5f9' }}>
             <TextField 
                 fullWidth size="small" 
-                placeholder="Tìm kiếm theo mã HĐ, tên khách hàng, nhân viên..." 
+                placeholder="Tìm kiếm theo mã HĐ, chi nhánh, tên khách hàng, nhân viên..." 
                 value={searchQuery} 
                 onChange={e => setSearchQuery(e.target.value)} 
                 InputProps={{ startAdornment: <FilterIcon sx={{ mr: 1, color: 'text.disabled' }} /> }} 
@@ -89,6 +87,8 @@ export const OrderHistoryPage: React.FC = () => {
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Mã GD</TableCell>
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Thời Gian</TableCell>
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Kênh Bán</TableCell>
+                {/* 🟢 ĐÃ SỬA: Thêm cột Cửa Hàng */}
+                <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Cửa Hàng</TableCell>
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Khách Hàng</TableCell>
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }} align="right">Tổng Tiền</TableCell>
                 <TableCell sx={{ color: '#fff', fontWeight: 600 }}>Nhân Viên</TableCell>
@@ -96,14 +96,16 @@ export const OrderHistoryPage: React.FC = () => {
             </TableHead>
             <TableBody sx={{ bgcolor: '#fff' }}>
               {loading ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
               ) : filtered.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5, color: 'text.secondary' }}>Không có giao dịch nào.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5, color: 'text.secondary' }}>Không có giao dịch nào.</TableCell></TableRow>
               ) : filtered.map((row) => (
                 <TableRow key={row.id} hover>
                   <TableCell sx={{ fontWeight: 700 }}>{row.orderNumber}</TableCell>
                   <TableCell>{new Date(row.createdAt).toLocaleString('vi-VN')}</TableCell>
                   <TableCell>{renderTypeChip(row.orderType)}</TableCell>
+                  {/* 🟢 ĐÃ SỬA: Map dữ liệu storeName */}
+                  <TableCell sx={{ fontWeight: 700, color: '#3b82f6' }}>{row.storeName || '-'}</TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{row.customerName || 'Khách lẻ'}</TableCell>
                   <TableCell align="right" sx={{ fontWeight: 800, color: '#16a34a' }}>
                     {formatCurrency(row.totalAmount)}
