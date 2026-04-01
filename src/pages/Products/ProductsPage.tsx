@@ -4,13 +4,15 @@ import {
   TableContainer, TableHead, TableRow, Paper, Button, IconButton,
   TextField, Dialog, DialogTitle, DialogContent, DialogActions,
   MenuItem, FormControl, InputLabel, Select, Chip, Grid,
-  InputAdornment, CircularProgress, Stack, Avatar, Divider, Tooltip
+  InputAdornment, CircularProgress, Stack, Avatar, Divider, Tooltip,
+  FormControlLabel, Checkbox
 } from '@mui/material';
 import {
   Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
   Search as SearchIcon, PhotoCamera as PhotoIcon, Save as SaveIcon,
   AddCircleOutline as AddVariantIcon, RemoveCircleOutline as RemoveIcon,
-  InfoOutlined as InfoIcon, Close as CloseIcon
+  InfoOutlined as InfoIcon, Close as CloseIcon, Print as PrintIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
 import { useAuthStore } from '../../store/authStore';
@@ -37,6 +39,7 @@ export const ProductsPage: React.FC = () => {
 
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
+  const [printAfterSave, setPrintAfterSave] = useState(false);
 
   const [formData, setFormData] = useState({
     code: '', name: '', categoryId: '', unitId: '',
@@ -49,9 +52,16 @@ export const ProductsPage: React.FC = () => {
 
   const extractData = (response: any) => {
     if (!response) return [];
-    if (Array.isArray(response.data?.data)) return response.data.data;
-    if (Array.isArray(response.data)) return response.data;
     if (Array.isArray(response)) return response;
+    
+    const data = response.data;
+    if (!data) return [];
+    
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data.data)) return data.data;
+    if (Array.isArray(data.content)) return data.content;
+    if (data.data && Array.isArray(data.data.content)) return data.data.content;
+    
     return [];
   };
 
@@ -68,25 +78,44 @@ export const ProductsPage: React.FC = () => {
     return p.imageUrl || p.hinhAnhUrl || p.image || null;
   };
 
-  // Chuẩn hóa biến thể để tránh lỗi mất Màu/Size do lệch kiểu dữ liệu từ Backend
-  const normalizeVariant = (v: any) => ({
-    ...v,
-    colorId: v.colorId || (v.color ? v.color.id : ''),
-    sizeId: v.sizeId || (v.size ? v.size.id : ''),
-    colorName: v.colorName || (v.color ? v.color.name : ''),
-    sizeName: v.sizeName || (v.size ? v.size.name : '')
-  });
+  // 🟢 THÊM HÀM QUÉT SÂU TÌM ID CỦA DANH MỤC VÀ ĐƠN VỊ TỪ BACKEND
+  const getCategoryId = (p: any) => p?.categoryId ?? p?.danhMucId ?? p?.category?.id ?? p?.danhMuc?.id ?? '';
+  const getUnitId = (p: any) => p?.unitId ?? p?.donViId ?? p?.unit?.id ?? p?.donVi?.id ?? '';
+
+  const getCategoryName = (catId: any) => {
+    if (!catId) return 'N/A';
+    const cat = categories.find(c => String(c.id ?? c.danhMucId) === String(catId));
+    return cat ? (cat.name ?? cat.tenDanhMuc) : 'N/A';
+  };
+
+  const getUnitName = (uId: any) => {
+    if (!uId) return 'N/A';
+    const u = units.find(un => String(un.id ?? un.donViId) === String(uId));
+    return u ? (u.name ?? u.tenDonVi) : 'N/A';
+  };
+
+  const normalizeVariant = (v: any) => {
+    const cId = v.colorId ?? v.mauSacId ?? v.color?.id ?? v.color?.mauSacId ?? '';
+    const sId = v.sizeId ?? v.kichThuocId ?? v.size?.id ?? v.size?.kichThuocId ?? '';
+    return {
+      ...v,
+      colorId: cId !== '' && cId !== null ? String(cId) : '',
+      sizeId: sId !== '' && sId !== null ? String(sId) : '',
+      colorName: v.colorName ?? v.tenMau ?? v.color?.name ?? v.color?.tenMau ?? '',
+      sizeName: v.sizeName ?? v.tenKichThuoc ?? v.size?.name ?? v.size?.tenKichThuoc ?? ''
+    };
+  };
 
   // --- API CALLS ---
   const loadInitialData = async () => {
     try {
       setLoading(true);
       const [pRes, cRes, uRes, clRes, szRes] = await Promise.all([
-        productAPI.getAll().catch(() => null), 
-        categoryAPI.getAll().catch(() => null),
-        unitAPI.getAll().catch(() => null),
-        colorAPI.getAll().catch(() => null),
-        sizeAPI.getAll().catch(() => null)
+        productAPI.getAll().catch(e => null), 
+        categoryAPI.getAll().catch(e => null),
+        unitAPI.getAll().catch(e => null),
+        colorAPI.getAll().catch(e => null),
+        sizeAPI.getAll().catch(e => null)
       ]);
 
       setProducts(extractData(pRes));
@@ -117,8 +146,9 @@ export const ProductsPage: React.FC = () => {
       setFormData({
         code: p.code || p.maSku || '', 
         name: p.name || p.tenSanPham || '',
-        categoryId: String(p.categoryId || p.danhMucId || ''), 
-        unitId: String(p.unitId || p.donViId || ''),
+        // 🟢 FIX LỖI KHÔNG HIỆN DANH MỤC/ĐƠN VỊ KHI SỬA SẢN PHẨM
+        categoryId: getCategoryId(p) !== '' ? String(getCategoryId(p)) : '', 
+        unitId: getUnitId(p) !== '' ? String(getUnitId(p)) : '',
         price: p.baseRetailPrice || p.giaBan || p.price || 0, 
         costPrice: p.baseCostPrice || p.giaNhap || p.costPrice || 0,
         barcode: p.barcode || p.maVach || '', 
@@ -135,7 +165,9 @@ export const ProductsPage: React.FC = () => {
       });
       setImagePreview(null);
     }
-    setImageFile(null); setOpenDialog(true);
+    setImageFile(null); 
+    setPrintAfterSave(false);
+    setOpenDialog(true);
   };
 
   const addVariant = () => {
@@ -178,7 +210,8 @@ export const ProductsPage: React.FC = () => {
         });
         
         if (uploadRes.ok) {
-          const imageUrl = await uploadRes.text(); 
+          const rawText = await uploadRes.text(); 
+          const imageUrl = rawText.replace(/["']/g, '');
           if (imageUrl) hinhAnhUrls = [imageUrl];
         } else { showToast('Lỗi upload ảnh', 'error'); }
       } else if (imagePreview) {
@@ -207,6 +240,10 @@ export const ProductsPage: React.FC = () => {
         await productAPI.create(payload);
         showToast('Thêm sản phẩm thành công', 'success');
       }
+
+      if (printAfterSave) {
+        showToast('Đang tạo lệnh in tem/hóa đơn...', 'info');
+      }
       
       setOpenDialog(false); loadInitialData();
     } catch (error: any) { 
@@ -215,19 +252,28 @@ export const ProductsPage: React.FC = () => {
   };
 
   const filteredProducts = useMemo(() => 
-    products.filter(p => (p.name || p.tenSanPham)?.toLowerCase().includes(searchQuery.toLowerCase()) || (p.code || p.maSku)?.toLowerCase().includes(searchQuery.toLowerCase()))
+    products.filter(p => {
+      const nameStr = (p.name ?? p.tenSanPham ?? '').toString().toLowerCase();
+      const codeStr = (p.code ?? p.maSku ?? '').toString().toLowerCase();
+      const searchStr = searchQuery.toLowerCase();
+      return nameStr.includes(searchStr) || codeStr.includes(searchStr);
+    })
   , [products, searchQuery]);
 
   return (
     <Box sx={{ p: 3, bgcolor: '#f8fafc', minHeight: '100vh' }}>
-      {/* HEADER */}
       <Stack direction="row" justifyContent="space-between" alignItems="center" mb={3}>
         <Typography variant="h5" fontWeight={800} color="#1e293b">Quản Lý Sản Phẩm</Typography>
-        {isSuperAdmin() && (
-          <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ borderRadius: 2, textTransform: 'none', px: 3, py: 1, boxShadow: '0 4px 14px 0 rgb(0 118 255 / 39%)' }}>
-            Tạo Sản Phẩm Mới
+        <Stack direction="row" spacing={2}>
+          <Button variant="outlined" startIcon={<RefreshIcon />} onClick={loadInitialData} disabled={loading} sx={{ borderRadius: 2, textTransform: 'none', px: 2, py: 1 }}>
+            Làm mới
           </Button>
-        )}
+          {isSuperAdmin() && (
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => handleOpenDialog()} sx={{ borderRadius: 2, textTransform: 'none', px: 3, py: 1, boxShadow: '0 4px 14px 0 rgb(0 118 255 / 39%)' }}>
+              Tạo Sản Phẩm Mới
+            </Button>
+          )}
+        </Stack>
       </Stack>
 
       <Card sx={{ mb: 3, borderRadius: 3, boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
@@ -236,7 +282,6 @@ export const ProductsPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* BẢNG DANH SÁCH SẢN PHẨM */}
       <TableContainer component={Paper} sx={{ borderRadius: 3, boxShadow: '0 1px 3px 0 rgb(0 0 0 / 0.1)' }}>
         <Table>
           <TableHead sx={{ bgcolor: '#f1f5f9' }}>
@@ -268,7 +313,8 @@ export const ProductsPage: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">SKU: {p.code || p.maSku}</Typography>
                 </TableCell>
 
-                <TableCell><Chip label={categories.find(c => String(c.id) === String(p.categoryId || p.danhMucId))?.name || 'N/A'} size="small" variant="outlined" sx={{ borderRadius: 1 }} /></TableCell>
+                {/* 🟢 CẬP NHẬT GỌI TÊN DANH MỤC TRONG BẢNG */}
+                <TableCell><Chip label={getCategoryName(getCategoryId(p))} size="small" variant="outlined" sx={{ borderRadius: 1 }} /></TableCell>
                 <TableCell align="center"><Chip label={`${p.variants?.length || 0} thuộc tính`} size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 600, borderRadius: 1 }} /></TableCell>
                 <TableCell align="right"><Typography fontWeight={700} color="#dc2626">{formatCurrency(p.baseRetailPrice || p.giaBan || p.price)}</Typography></TableCell>
                 <TableCell align="center"><Chip label={p.status === 'ACTIVE' || p.hoatDong !== false ? 'Đang bán' : 'Ngừng'} size="small" sx={{ bgcolor: (p.status === 'ACTIVE' || p.hoatDong !== false) ? '#dcfce7' : '#f1f5f9', color: (p.status === 'ACTIVE' || p.hoatDong !== false) ? '#166534' : '#64748b', fontWeight: 600, borderRadius: 1 }} /></TableCell>
@@ -317,11 +363,11 @@ export const ProductsPage: React.FC = () => {
                     <Grid container spacing={2}>
                       <Grid item xs={6}>
                         <Typography variant="caption" color="text.secondary">Danh mục:</Typography>
-                        <Typography variant="body2" fontWeight={600}>{categories.find(c => String(c.id) === String(selectedProduct.categoryId || selectedProduct.danhMucId))?.name || 'N/A'}</Typography>
+                        <Typography variant="body2" fontWeight={600}>{getCategoryName(getCategoryId(selectedProduct))}</Typography>
                       </Grid>
                       <Grid item xs={6}>
                         <Typography variant="caption" color="text.secondary">Đơn vị tính:</Typography>
-                        <Typography variant="body2" fontWeight={600}>{units.find(u => String(u.id) === String(selectedProduct.unitId || selectedProduct.donViId))?.name || 'N/A'}</Typography>
+                        <Typography variant="body2" fontWeight={600}>{getUnitName(getUnitId(selectedProduct))}</Typography>
                       </Grid>
                     </Grid>
                   </Card>
@@ -339,20 +385,32 @@ export const ProductsPage: React.FC = () => {
                       <TableBody>
                         {(!selectedProduct.variants || selectedProduct.variants.length === 0) ? (
                           <TableRow><TableCell colSpan={3} align="center" sx={{ py: 3, color: 'text.secondary' }}>Sản phẩm này chưa có biến thể nào.</TableCell></TableRow>
-                        ) : selectedProduct.variants.map((v: any, idx: number) => (
-                          <TableRow key={idx} hover>
-                            <TableCell>
-                              <Typography variant="body2" fontWeight={600}>{v.sku}</Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {[v.colorName || colors.find(c => c.id === v.colorId)?.name, v.sizeName || sizes.find(s => s.id === v.sizeId)?.name].filter(Boolean).join(' - ') || 'Mặc định'}
-                              </Typography>
-                            </TableCell>
-                            <TableCell align="right" sx={{ color: '#dc2626', fontWeight: 700 }}>{formatCurrency(v.sellPrice || selectedProduct.baseRetailPrice)}</TableCell>
-                            <TableCell align="center">
-                              <Chip label={v.quantity || 0} size="small" color={(v.quantity || 0) < 10 ? 'error' : 'primary'} variant="outlined" sx={{ fontWeight: 800, minWidth: 40 }} />
-                            </TableCell>
-                          </TableRow>
-                        ))}
+                        ) : selectedProduct.variants.map((v: any, idx: number) => {
+                          let cLabel = v.colorName;
+                          if (!cLabel) {
+                            const cObj = colors.find((x:any) => String(x.id ?? x.mauSacId ?? x) === String(v.colorId));
+                            cLabel = cObj ? (cObj.name ?? cObj.tenMau ?? String(cObj)) : '';
+                          }
+                          let sLabel = v.sizeName;
+                          if (!sLabel) {
+                            const sObj = sizes.find((x:any) => String(x.id ?? x.kichThuocId ?? x) === String(v.sizeId));
+                            sLabel = sObj ? (sObj.name ?? sObj.tenKichThuoc ?? String(sObj)) : '';
+                          }
+                          const attributesStr = [cLabel, sLabel].filter(Boolean).join(' - ') || 'Mặc định';
+
+                          return (
+                            <TableRow key={idx} hover>
+                              <TableCell>
+                                <Typography variant="body2" fontWeight={600}>{v.sku}</Typography>
+                                <Typography variant="caption" color="text.secondary">{attributesStr}</Typography>
+                              </TableCell>
+                              <TableCell align="right" sx={{ color: '#dc2626', fontWeight: 700 }}>{formatCurrency(v.sellPrice || selectedProduct.baseRetailPrice)}</TableCell>
+                              <TableCell align="center">
+                                <Chip label={v.quantity || 0} size="small" color={(v.quantity || 0) < 10 ? 'error' : 'primary'} variant="outlined" sx={{ fontWeight: 800, minWidth: 40 }} />
+                              </TableCell>
+                            </TableRow>
+                          );
+                        })}
                       </TableBody>
                     </Table>
                   </TableContainer>
@@ -407,20 +465,28 @@ export const ProductsPage: React.FC = () => {
                       <Grid item xs={12}><TextField fullWidth label="Tên Sản Phẩm *" size="small" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></Grid>
                       <Grid item xs={6}><TextField fullWidth label="Mã SKU *" size="small" value={formData.code} onChange={e => setFormData({...formData, code: e.target.value.toUpperCase()})} /></Grid>
                       <Grid item xs={6}><TextField fullWidth label="Mã Vạch (Barcode)" size="small" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} /></Grid>
+                      
                       <Grid item xs={6}>
-                        <FormControl fullWidth size="small"><InputLabel>Danh mục *</InputLabel>
-                          <Select label="Danh mục *" value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
-                            {categories.map(c => <MenuItem key={c.id || c.danhMucId} value={String(c.id || c.danhMucId)}>{c.name || c.tenDanhMuc}</MenuItem>)}
+                        {/* 🟢 FIX LỖI THẺ SELECT CHỈ ĐỊNH DISPLAYEMPTY VÀ THÊM LỰA CHỌN MẶC ĐỊNH */}
+                        <FormControl fullWidth size="small">
+                          <InputLabel id="category-label">Danh mục *</InputLabel>
+                          <Select labelId="category-label" label="Danh mục *" displayEmpty value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
+                            <MenuItem value="" disabled><em>Chọn danh mục</em></MenuItem>
+                            {categories.map((c:any) => <MenuItem key={c.id ?? c.danhMucId} value={String(c.id ?? c.danhMucId)}>{c.name ?? c.tenDanhMuc}</MenuItem>)}
                           </Select>
                         </FormControl>
                       </Grid>
+                      
                       <Grid item xs={6}>
-                        <FormControl fullWidth size="small"><InputLabel>Đơn vị *</InputLabel>
-                          <Select label="Đơn vị *" value={formData.unitId} onChange={e => setFormData({...formData, unitId: e.target.value})}>
-                            {units.map((u:any) => <MenuItem key={u.id || u.donViId} value={String(u.id || u.donViId)}>{u.name || u.tenDonVi}</MenuItem>)}
+                        <FormControl fullWidth size="small">
+                          <InputLabel id="unit-label">Đơn vị *</InputLabel>
+                          <Select labelId="unit-label" label="Đơn vị *" displayEmpty value={formData.unitId} onChange={e => setFormData({...formData, unitId: e.target.value})}>
+                            <MenuItem value="" disabled><em>Chọn đơn vị</em></MenuItem>
+                            {units.map((u:any) => <MenuItem key={u.id ?? u.donViId} value={String(u.id ?? u.donViId)}>{u.name ?? u.tenDonVi}</MenuItem>)}
                           </Select>
                         </FormControl>
                       </Grid>
+
                     </Grid>
                   </Grid>
                   <Grid item xs={12}><TextField fullWidth multiline rows={2} label="Mô tả chi tiết" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})} /></Grid>
@@ -436,8 +502,8 @@ export const ProductsPage: React.FC = () => {
                   <Tooltip title="Giá này sẽ được áp dụng tự động cho biến thể mới thêm"><InfoIcon fontSize="small" color="disabled" /></Tooltip>
                 </Stack>
                 <Grid container spacing={3}>
-                  <Grid item xs={6}><TextField fullWidth label="Giá vốn (Giá nhập) *" size="small" type="number" value={formData.costPrice} onChange={e => setFormData({...formData, costPrice: Number(e.target.value)})} InputProps={{ endAdornment: <InputAdornment position="end">đ</InputAdornment> }} /></Grid>
-                  <Grid item xs={6}><TextField fullWidth label="Giá bán lẻ *" size="small" type="number" value={formData.price} onChange={e => setFormData({...formData, price: Number(e.target.value)})} InputProps={{ endAdornment: <InputAdornment position="end">đ</InputAdornment> }} /></Grid>
+                  <Grid item xs={6}><TextField fullWidth label="Giá vốn (Giá nhập) *" size="small" type="number" inputProps={{ min: 0 }} value={formData.costPrice} onChange={e => setFormData({...formData, costPrice: Math.max(0, Number(e.target.value))})} InputProps={{ endAdornment: <InputAdornment position="end">đ</InputAdornment> }} /></Grid>
+                  <Grid item xs={6}><TextField fullWidth label="Giá bán lẻ *" size="small" type="number" inputProps={{ min: 0 }} value={formData.price} onChange={e => setFormData({...formData, price: Math.max(0, Number(e.target.value))})} InputProps={{ endAdornment: <InputAdornment position="end">đ</InputAdornment> }} /></Grid>
                 </Grid>
               </CardContent>
             </Card>
@@ -468,31 +534,37 @@ export const ProductsPage: React.FC = () => {
                         <TableRow key={i} sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
                           <TableCell sx={{ width: 140 }}><TextField size="small" variant="standard" InputProps={{ disableUnderline: true }} value={v.sku} onChange={e => updateVariant(i, 'sku', e.target.value)} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1 }} /></TableCell>
                           
-                          {/* 🟢 ÉP KIỂU STRING() CHO SELECT MÀU SẮC ĐỂ HIỂN THỊ ĐÚNG DỮ LIỆU 🟢 */}
                           <TableCell sx={{ width: 130 }}>
-                            <Select size="small" variant="standard" disableUnderline fullWidth 
-                                value={v.colorId ? String(v.colorId) : ''} 
+                            <Select size="small" variant="standard" disableUnderline fullWidth displayEmpty
+                                value={v.colorId !== null && v.colorId !== undefined && v.colorId !== '' ? String(v.colorId) : ''} 
                                 onChange={e => updateVariant(i, 'colorId', e.target.value)} 
                                 sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1 }}>
-                              <MenuItem value=""><em>Trống</em></MenuItem>
-                              {colors.map((c:any) => <MenuItem key={c.id} value={String(c.id)}>{c.name}</MenuItem>)}
+                              <MenuItem value="" disabled><em>Trống</em></MenuItem>
+                              {colors.map((c:any, idx: number) => {
+                                const cId = typeof c === 'object' ? String(c.id ?? c.mauSacId ?? c.code ?? idx) : String(c);
+                                const cName = typeof c === 'object' ? (c.name ?? c.tenMau ?? c.description ?? `Màu ${cId}`) : String(c);
+                                return <MenuItem key={`color-${cId}-${idx}`} value={cId}>{cName}</MenuItem>;
+                              })}
                             </Select>
                           </TableCell>
                           
-                          {/* 🟢 ÉP KIỂU STRING() CHO SELECT KÍCH CỠ ĐỂ HIỂN THỊ ĐÚNG DỮ LIỆU 🟢 */}
                           <TableCell sx={{ width: 130 }}>
-                            <Select size="small" variant="standard" disableUnderline fullWidth 
-                                value={v.sizeId ? String(v.sizeId) : ''} 
+                            <Select size="small" variant="standard" disableUnderline fullWidth displayEmpty
+                                value={v.sizeId !== null && v.sizeId !== undefined && v.sizeId !== '' ? String(v.sizeId) : ''} 
                                 onChange={e => updateVariant(i, 'sizeId', e.target.value)} 
                                 sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1 }}>
-                              <MenuItem value=""><em>Trống</em></MenuItem>
-                              {sizes.map((s:any) => <MenuItem key={s.id} value={String(s.id)}>{s.name}</MenuItem>)}
+                              <MenuItem value="" disabled><em>Trống</em></MenuItem>
+                              {sizes.map((s:any, idx: number) => {
+                                const sId = typeof s === 'object' ? String(s.id ?? s.kichThuocId ?? s.code ?? idx) : String(s);
+                                const sName = typeof s === 'object' ? (s.name ?? s.tenKichThuoc ?? s.description ?? `Size ${sId}`) : String(s);
+                                return <MenuItem key={`size-${sId}-${idx}`} value={sId}>{sName}</MenuItem>;
+                              })}
                             </Select>
                           </TableCell>
 
-                          <TableCell align="right"><TextField type="number" size="small" variant="standard" InputProps={{ disableUnderline: true }} value={v.costPrice} onChange={e => updateVariant(i, 'costPrice', Number(e.target.value))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
-                          <TableCell align="right"><TextField type="number" size="small" variant="standard" InputProps={{ disableUnderline: true }} value={v.sellPrice} onChange={e => updateVariant(i, 'sellPrice', Number(e.target.value))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
-                          <TableCell align="center"><TextField type="number" size="small" variant="standard" InputProps={{ disableUnderline: true }} value={v.quantity} onChange={e => updateVariant(i, 'quantity', Number(e.target.value))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 60, input: { textAlign: 'center' } }} /></TableCell>
+                          <TableCell align="right"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.costPrice} onChange={e => updateVariant(i, 'costPrice', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
+                          <TableCell align="right"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.sellPrice} onChange={e => updateVariant(i, 'sellPrice', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
+                          <TableCell align="center"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.quantity} onChange={e => updateVariant(i, 'quantity', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 60, input: { textAlign: 'center' } }} /></TableCell>
                           <TableCell align="center"><IconButton color="error" size="small" onClick={() => removeVariant(i)}><RemoveIcon fontSize="small" /></IconButton></TableCell>
                         </TableRow>
                       ))}
@@ -507,11 +579,17 @@ export const ProductsPage: React.FC = () => {
 
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ p: 3, bgcolor: '#fff', borderTop: '1px solid #e2e8f0' }}>
-          <Button onClick={() => setOpenDialog(false)} color="inherit" sx={{ textTransform: 'none', fontWeight: 600 }}>Hủy bỏ</Button>
-          <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={loading} sx={{ borderRadius: 2, textTransform: 'none', px: 4, fontWeight: 600, boxShadow: '0 4px 14px 0 rgb(0 118 255 / 39%)' }}>
-            {loading ? 'Đang xử lý...' : (editingId ? 'Lưu Thay Đổi' : 'Lưu Sản Phẩm & Phân Loại')}
-          </Button>
+        <DialogActions sx={{ p: 3, bgcolor: '#fff', borderTop: '1px solid #e2e8f0', justifyContent: 'space-between' }}>
+          <FormControlLabel
+            control={<Checkbox checked={printAfterSave} onChange={(e) => setPrintAfterSave(e.target.checked)} color="primary" />}
+            label={<Typography variant="body2" fontWeight={600} color="text.secondary" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><PrintIcon fontSize="small"/> In tem/hóa đơn sau khi lưu</Typography>}
+          />
+          <Box>
+            <Button onClick={() => setOpenDialog(false)} color="inherit" sx={{ textTransform: 'none', fontWeight: 600, mr: 1 }}>Hủy bỏ</Button>
+            <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSave} disabled={loading} sx={{ borderRadius: 2, textTransform: 'none', px: 4, fontWeight: 600, boxShadow: '0 4px 14px 0 rgb(0 118 255 / 39%)' }}>
+              {loading ? 'Đang xử lý...' : (editingId ? 'Lưu Thay Đổi' : 'Lưu Sản Phẩm & Phân Loại')}
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
     </Box>

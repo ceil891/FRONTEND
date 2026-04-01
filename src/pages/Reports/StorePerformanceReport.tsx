@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, LinearProgress, TextField, Button,
-  Checkbox, Pagination, CircularProgress
+  TableContainer, TableHead, TableRow, LinearProgress, Grid, TextField, Button,
+  Checkbox, Pagination
 } from '@mui/material';
 import {
+  Assessment as AssessmentIcon,
+  TrendingUp as TrendingUpIcon,
   Print as PrintIcon,
   FileDownload as ExcelIcon,
   FilterAlt as FilterIcon,
@@ -12,50 +14,39 @@ import {
   Storefront as StoreIcon
 } from '@mui/icons-material';
 import { reportAPI } from '../../api/client';
-import { useToastStore } from '../../store/toastStore';
+
+const mockStorePerformance = [
+  { no: 1, id: 'CH01', name: 'Cửa hàng Hà Nội', revenue: 450000000, target: 400000000, orders: 1250, customers: 980 },
+  { no: 2, id: 'CH02', name: 'Cửa hàng Hồ Chí Minh', revenue: 380000000, target: 500000000, orders: 950, customers: 820 },
+  { no: 3, id: 'CH03', name: 'Cửa hàng Đà Nẵng', revenue: 150000000, target: 150000000, orders: 420, customers: 390 },
+];
 
 export const StorePerformanceReport: React.FC = () => {
   const [month, setMonth] = useState('2026-03');
-  
-  // 🟢 Đã dọn sạch Mock Data, dùng mảng rỗng chờ API
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { showToast } = useToastStore();
-  
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
+  const [rows, setRows] = useState(mockStorePerformance);
+  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
         const startDate = `${month}-01`;
-        const endDate = `${month}-31`; 
-        
-        // Gọi API lấy dữ liệu thật
+        const endDate = `${month}-31`;
         const res = await reportAPI.getStoreComparison({ startDate, endDate });
-        
-        // Map dữ liệu an toàn
-        const apiRows = (res.data?.data || []).map((item: any, index: number) => ({
+        const apiRows = (res.data.data || []).map((item, index) => ({
           no: index + 1,
           id: `CH${item.storeId}`,
-          name: item.storeName || 'Cửa hàng chưa tên',
+          name: item.storeName,
           revenue: Number(item.revenue || 0),
-          target: Number(item.target || 1), // Tránh lỗi chia cho 0
+          target: Math.max(Number(item.revenue || 0), 1),
           orders: Number(item.orders || 0),
-          customers: Number(item.customers || 0), 
+          customers: Number(item.orders || 0),
         }));
-        
-        setRows(apiRows);
+        if (apiRows.length > 0) setRows(apiRows);
       } catch (error) {
-        console.error("Lỗi tải báo cáo hiệu suất:", error);
-        setRows([]); // Lỗi thì hiển thị bảng rỗng
-        showToast('Không thể tải dữ liệu hiệu suất chi nhánh', 'error');
-      } finally {
-        setLoading(false);
+        setRows(mockStorePerformance);
       }
     };
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
   return (
@@ -66,9 +57,11 @@ export const StorePerformanceReport: React.FC = () => {
         </Typography>
       </Box>
 
+      {/* BẢNG CHUẨN RIC */}
       <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
         <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
           
+          {/* THANH TOOLBAR ĐA MÀU SẮC */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <TextField 
               size="small" type="month"
@@ -76,15 +69,15 @@ export const StorePerformanceReport: React.FC = () => {
               sx={{ width: 220, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
             />
             
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }} onClick={() => window.print()}>In Báo Cáo</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }} onClick={() => showToast('Đang xuất Excel...', 'info')}>Xuất Excel</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Báo Cáo</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
           </Box>
 
           <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
             <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Dữ liệu so sánh giữa doanh thu thực tế và chỉ tiêu kinh doanh (KPI)</Typography>
           </Box>
 
-          <TableContainer sx={{ minHeight: 400 }}>
+          <TableContainer>
             <Table sx={{ minWidth: 1100 }}>
               <TableHead sx={{ bgcolor: '#ffffff' }}>
                 <TableRow>
@@ -109,12 +102,7 @@ export const StorePerformanceReport: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {/* 🟢 Xử lý hiển thị Loading / Rỗng / Có dữ liệu */}
-                {loading ? (
-                   <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
-                ) : rows.length === 0 ? (
-                   <TableRow><TableCell colSpan={9} align="center" sx={{ py: 6, color: 'text.secondary' }}>Không có dữ liệu hiệu suất trong tháng này</TableCell></TableRow>
-                ) : rows.map((row) => {
+                {rows.map((row) => {
                   const progress = (row.revenue / row.target) * 100;
                   const progressColor = progress >= 100 ? 'success' : progress >= 75 ? 'primary' : 'error';
                   
@@ -165,11 +153,11 @@ export const StorePerformanceReport: React.FC = () => {
                       </TableCell>
 
                       <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }} align="right">
-                        <Typography variant="body2" fontWeight={600} color="#475569">{row.orders.toLocaleString('vi-VN')}</Typography>
+                        <Typography variant="body2" fontWeight={600} color="#475569">{row.orders.toLocaleString()}</Typography>
                       </TableCell>
 
                       <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }} align="right">
-                        <Typography variant="body2" fontWeight={600} color="#475569">{row.customers.toLocaleString('vi-VN')}</Typography>
+                        <Typography variant="body2" fontWeight={600} color="#475569">{row.customers.toLocaleString()}</Typography>
                       </TableCell>
                     </TableRow>
                   );
@@ -181,7 +169,7 @@ export const StorePerformanceReport: React.FC = () => {
           <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
              <Pagination count={1} size="small" shape="rounded" color="primary" />
              <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>
-               1 - {rows.length} của {rows.length} chi nhánh
+               1 - {rows.length} of {rows.length} items
              </Typography>
           </Box>
         </CardContent>

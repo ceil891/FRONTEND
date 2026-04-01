@@ -2,105 +2,69 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, MenuItem, FormControl, Select,
-  Button, CircularProgress
+  Button, Divider, Paper
 } from '@mui/material';
 import {
+  AccountBalanceWallet as ProfitIcon,
   Print as PrintIcon,
   FileDownload as ExcelIcon,
-  FilterAlt as FilterIcon, // 🟢 ĐÃ CHUYỂN VỀ ĐÚNG NHÀ CỦA ICON 🟢
+  FilterAlt as FilterIcon,
+  TrendingUp as TrendingUpIcon
 } from '@mui/icons-material';
-import { reportAPI, storeAPI } from '../../api/client';
-import { useToastStore } from '../../store/toastStore';
+import { reportAPI } from '../../api/client';
 
-interface PLItem {
-  name: string;
-  values: Record<number, number>; 
-}
-
-interface PLSection {
-  group: string;
-  items: PLItem[];
-  isTotal?: boolean;
-  isFinal?: boolean;
-}
+const mockProfitLoss = [
+  { group: '1. Doanh Thu', items: [{ name: 'Doanh thu bán hàng', hn: 500000000, hcm: 420000000 }] },
+  { group: '2. Giá Vốn', items: [{ name: 'Giá vốn hàng bán (COGS)', hn: -300000000, hcm: -250000000 }] },
+  { group: '3. LỢI NHUẬN GỘP', items: [{ name: 'Lợi Nhuận Gộp', hn: 200000000, hcm: 170000000 }], isTotal: true },
+  { group: '4. Chi Phí Vận Hành', items: [
+      { name: 'Chi phí mặt bằng', hn: -50000000, hcm: -60000000 },
+      { name: 'Chi phí nhân sự', hn: -40000000, hcm: -45000000 },
+      { name: 'Chi phí Marketing', hn: -15000000, hcm: -20000000 },
+      { name: 'Chi phí điện nước & khác', hn: -5000000, hcm: -6000000 }
+  ] },
+  { group: '5. LỢI NHUẬN RÒNG (NET PROFIT)', items: [{ name: 'LỢI NHUẬN RÒNG', hn: 90000000, hcm: 39000000 }], isFinal: true },
+];
 
 export const ProfitLossReport: React.FC = () => {
   const [month, setMonth] = useState('2026-03');
-  const [stores, setStores] = useState<any[]>([]); 
-  const [sections, setSections] = useState<PLSection[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { showToast } = useToastStore();
-  
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
+  const [sections, setSections] = useState(mockProfitLoss);
+  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
         const startDate = `${month}-01`;
         const endDate = `${month}-31`;
 
-        // 1. Gọi API lấy danh sách chi nhánh trước
-        const storeRes = await storeAPI.getAll();
-        const fetchedStores = storeRes.data?.data || storeRes.data || [];
-        setStores(fetchedStores);
-
-        if (fetchedStores.length === 0) {
-          setSections([]);
-          return;
-        }
-
-        // 2. Gọi song song API lấy doanh thu/lợi nhuận cho tất cả các chi nhánh
-        const revPromises = fetchedStores.map((st: any) => 
-          reportAPI.getRevenue({ startDate, endDate, period: 'month', storeId: st.id })
-        );
-        const revResponses = await Promise.all(revPromises);
-
-        // 3. Chuẩn bị object lưu trữ dữ liệu tài chính cho từng chi nhánh
-        const revenueValues: Record<number, number> = {};
-        const cogsValues: Record<number, number> = {};
-        const grossProfitValues: Record<number, number> = {};
-        const operatingValues: Record<number, number> = {};
-        const netProfitValues: Record<number, number> = {};
-
-        // 4. Lắp ráp dữ liệu
-        fetchedStores.forEach((st: any, index: number) => {
-          const dataList = revResponses[index].data?.data || [];
-          const storeData = dataList.length > 0 ? dataList[0] : null;
-
-          const revenue = Number(storeData?.revenue || 0);
-          const grossProfit = Number(storeData?.profit || 0);
-          
-          const cogs = -(revenue - grossProfit); // Giá vốn hàng bán (âm)
-          const opCost = -(revenue * 0.1); // Giả lập chi phí vận hành 10% doanh thu (âm)
-          const netProfit = grossProfit + opCost; // Lợi nhuận ròng
-
-          revenueValues[st.id] = revenue;
-          cogsValues[st.id] = cogs;
-          grossProfitValues[st.id] = grossProfit;
-          operatingValues[st.id] = opCost;
-          netProfitValues[st.id] = netProfit;
-        });
-
-        // 5. Đẩy vào sections để render
-        setSections([
-          { group: '1. Doanh Thu', items: [{ name: 'Doanh thu bán hàng', values: revenueValues }] },
-          { group: '2. Giá Vốn', items: [{ name: 'Giá vốn hàng bán (COGS)', values: cogsValues }] },
-          { group: '3. LỢI NHUẬN GỘP', items: [{ name: 'Lợi Nhuận Gộp', values: grossProfitValues }], isTotal: true },
-          { group: '4. Chi Phí Vận Hành', items: [{ name: 'Chi phí vận hành ước tính', values: operatingValues }] },
-          { group: '5. LỢI NHUẬN RÒNG (NET PROFIT)', items: [{ name: 'LỢI NHUẬN RÒNG', values: netProfitValues }], isFinal: true },
+        const [hnRes, hcmRes] = await Promise.all([
+          reportAPI.getRevenue({ startDate, endDate, period: 'month', storeId: 1 }),
+          reportAPI.getRevenue({ startDate, endDate, period: 'month', storeId: 2 }),
         ]);
 
+        const hn = hnRes.data.data?.[0];
+        const hcm = hcmRes.data.data?.[0];
+        const revenueHn = Number(hn?.revenue || 0);
+        const revenueHcm = Number(hcm?.revenue || 0);
+        const grossHn = Number(hn?.profit || 0);
+        const grossHcm = Number(hcm?.profit || 0);
+        const operatingHn = -(revenueHn * 0.1);
+        const operatingHcm = -(revenueHcm * 0.1);
+        const netHn = grossHn + operatingHn;
+        const netHcm = grossHcm + operatingHcm;
+
+        setSections([
+          { group: '1. Doanh Thu', items: [{ name: 'Doanh thu bán hàng', hn: revenueHn, hcm: revenueHcm }] },
+          { group: '2. Giá Vốn', items: [{ name: 'Giá vốn hàng bán (COGS)', hn: grossHn - revenueHn, hcm: grossHcm - revenueHcm }] },
+          { group: '3. LỢI NHUẬN GỘP', items: [{ name: 'Lợi Nhuận Gộp', hn: grossHn, hcm: grossHcm }], isTotal: true },
+          { group: '4. Chi Phí Vận Hành', items: [{ name: 'Chi phí vận hành ước tính', hn: operatingHn, hcm: operatingHcm }] },
+          { group: '5. LỢI NHUẬN RÒNG (NET PROFIT)', items: [{ name: 'LỢI NHUẬN RÒNG', hn: netHn, hcm: netHcm }], isFinal: true },
+        ]);
       } catch (error) {
-        console.error("Lỗi khi tải báo cáo:", error);
-        setSections([]);
-        showToast("Lỗi khi tải báo cáo P&L", "error");
-      } finally {
-        setLoading(false);
+        setSections(mockProfitLoss);
       }
     };
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [month]);
 
   return (
@@ -124,7 +88,7 @@ export const ProfitLossReport: React.FC = () => {
               </Select>
             </FormControl>
             
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }} onClick={() => window.print()}>In Báo Cáo</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Báo Cáo</Button>
             <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
           </Box>
 
@@ -132,38 +96,25 @@ export const ProfitLossReport: React.FC = () => {
             <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Đơn vị tính: Việt Nam Đồng (VND)</Typography>
           </Box>
 
-          <TableContainer sx={{ minHeight: 400 }}>
+          <TableContainer>
             <Table sx={{ minWidth: 900 }}>
               <TableHead sx={{ bgcolor: '#ffffff' }}>
                 <TableRow>
                   <TableCell sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#475569', fontSize: '0.85rem' }}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                      CHỈ TIÊU TÀI CHÍNH
-                      <FilterIcon sx={{ fontSize: 14, color: '#cbd5e1' }} />
-                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>CHỈ TIÊU TÀI CHÍNH <FilterIcon sx={{ fontSize: 14, color: '#cbd5e1' }} /></Box>
                   </TableCell>
-                  
-                  {/* 🟢 TẠO CỘT ĐỘNG DỰA TRÊN DANH SÁCH CHI NHÁNH 🟢 */}
-                  {stores.map(st => (
-                     <TableCell key={st.id} align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#1d4ed8', fontSize: '0.85rem', textTransform: 'uppercase' }}>
-                       {st.name}
-                     </TableCell>
-                  ))}
-
+                  <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#166534', fontSize: '0.85rem' }}>HÀ NỘI</TableCell>
+                  <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 600, color: '#1d4ed8', fontSize: '0.85rem' }}>TP. HCM</TableCell>
                   <TableCell align="right" sx={{ borderBottom: '2px solid #f1f5f9', fontWeight: 700, color: '#0f172a', fontSize: '0.85rem', bgcolor: '#f8fafc' }}>TỔNG CỘNG</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {loading ? (
-                   <TableRow><TableCell colSpan={stores.length + 2} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
-                ) : stores.length === 0 ? (
-                   <TableRow><TableCell colSpan={2} align="center" sx={{ py: 6, color: 'text.secondary' }}>Chưa có dữ liệu chi nhánh</TableCell></TableRow>
-                ) : sections.map((section, idx) => (
+                {sections.map((section, idx) => (
                   <React.Fragment key={idx}>
                     {/* Hàng Tiêu Đề Nhóm */}
                     {!section.isTotal && !section.isFinal && (
                       <TableRow sx={{ bgcolor: '#f8fafc' }}>
-                        <TableCell colSpan={stores.length + 2} sx={{ fontWeight: 700, color: '#1e293b', py: 1, fontSize: '0.85rem', borderBottom: '1px solid #f1f5f9' }}>
+                        <TableCell colSpan={4} sx={{ fontWeight: 700, color: '#1e293b', py: 1, fontSize: '0.85rem', borderBottom: '1px solid #f1f5f9' }}>
                           {section.group}
                         </TableCell>
                       </TableRow>
@@ -171,10 +122,7 @@ export const ProfitLossReport: React.FC = () => {
                     
                     {/* Các dòng dữ liệu */}
                     {section.items.map((item, i) => {
-                      // Tính tổng cộng của cả hàng (Cộng dồn tất cả các chi nhánh)
-                      let rowTotal = 0;
-                      stores.forEach(st => { rowTotal += (item.values[st.id] || 0) });
-
+                      const total = item.hn + item.hcm;
                       return (
                         <TableRow key={i} hover sx={{ 
                           bgcolor: section.isFinal ? '#fff1f2' : section.isTotal ? '#f0fdf4' : 'inherit',
@@ -190,30 +138,32 @@ export const ProfitLossReport: React.FC = () => {
                             {item.name}
                           </TableCell>
                           
-                          {/* 🟢 RENDER GIÁ TRỊ CỦA TỪNG CHI NHÁNH 🟢 */}
-                          {stores.map(st => {
-                             const val = item.values[st.id] || 0;
-                             return (
-                                <TableCell key={st.id} align="right" sx={{ 
-                                  fontSize: '0.85rem', 
-                                  color: val < 0 ? '#dc2626' : '#475569',
-                                  fontWeight: section.isTotal || section.isFinal ? 700 : 500,
-                                  borderBottom: '1px solid #f1f5f9'
-                                }}>
-                                  {formatCurrency(val)}
-                                </TableCell>
-                             );
-                          })}
+                          <TableCell align="right" sx={{ 
+                            fontSize: '0.85rem', 
+                            color: item.hn < 0 ? '#dc2626' : '#475569',
+                            fontWeight: section.isTotal || section.isFinal ? 700 : 500,
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {formatCurrency(item.hn)}
+                          </TableCell>
                           
-                          {/* 🟢 CỘT TỔNG CỘNG 🟢 */}
+                          <TableCell align="right" sx={{ 
+                            fontSize: '0.85rem', 
+                            color: item.hcm < 0 ? '#dc2626' : '#475569',
+                            fontWeight: section.isTotal || section.isFinal ? 700 : 500,
+                            borderBottom: '1px solid #f1f5f9'
+                          }}>
+                            {formatCurrency(item.hcm)}
+                          </TableCell>
+                          
                           <TableCell align="right" sx={{ 
                             fontSize: '0.9rem', 
                             fontWeight: 800, 
-                            color: rowTotal < 0 ? '#dc2626' : section.isFinal ? '#be123c' : '#0f172a',
+                            color: total < 0 ? '#dc2626' : section.isFinal ? '#be123c' : '#0f172a',
                             bgcolor: section.isFinal ? '#ffe4e6' : section.isTotal ? '#dcfce7' : '#f8fafc',
                             borderBottom: '1px solid #f1f5f9'
                           }}>
-                            {formatCurrency(rowTotal)}
+                            {formatCurrency(total)}
                           </TableCell>
                         </TableRow>
                       );

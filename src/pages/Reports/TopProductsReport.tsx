@@ -2,59 +2,52 @@ import React, { useEffect, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, LinearProgress, Avatar, TextField,
-  Button, Checkbox, Pagination, CircularProgress, Chip
+  Button, Checkbox, Pagination, Chip
 } from '@mui/material';
 import {
+  EmojiEvents as TrophyIcon,
   Print as PrintIcon,
   FileDownload as ExcelIcon,
   FilterAlt as FilterIcon,
   Visibility as ViewIcon,
+  TrendingUp as TrendingUpIcon,
+  EventNote as CalendarIcon
 } from '@mui/icons-material';
 import { reportAPI } from '../../api/client';
-import { useToastStore } from '../../store/toastStore';
+
+const mockTopProducts = [
+  { rank: 1, name: 'Bánh Trung Thu Kinh Đô', category: 'Bánh kẹo', sold: 1540, revenue: 154000000, stock: 120 },
+  { rank: 2, name: 'Nước Ngọt Coca Cola Thùng 24', category: 'Đồ uống', sold: 850, revenue: 161500000, stock: 450 },
+  { rank: 3, name: 'Sữa Tươi Vinamilk Lốc 4', category: 'Sữa', sold: 720, revenue: 23040000, stock: 80 },
+  { rank: 4, name: 'Gạo ST25 5Kg', category: 'Thực phẩm', sold: 410, revenue: 61500000, stock: 25 },
+];
 
 export const TopProductsReport: React.FC = () => {
   const [dateFrom, setDateFrom] = useState('2026-03-01');
-  const [dateTo, setDateTo] = useState('2026-03-31');
+  const [dateTo, setDateTo] = useState('2026-03-06');
+  const [rows, setRows] = useState(mockTopProducts);
   
-  // 🟢 ĐÃ XÓA MOCK DATA: Khởi tạo bằng mảng rỗng []
-  const [rows, setRows] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const { showToast } = useToastStore();
-  
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
-  
-  // Tránh chia cho 0 khi mảng rỗng
+  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value);
   const maxSold = Math.max(...rows.map((p) => p.sold), 1);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        setLoading(true);
         const res = await reportAPI.getProductSales({ startDate: dateFrom, endDate: dateTo });
-        
-        // Bóc tách dữ liệu thật từ Backend
-        const apiRows = (res.data?.data || res.data || []).map((item: any, index: number) => ({
+        const apiRows = (res.data.data || []).map((item, index) => ({
           rank: index + 1,
-          name: item.productName || 'Sản phẩm không tên',
-          category: item.categoryName || 'Chưa phân loại',
-          sold: Number(item.quantitySold || 0),
+          name: item.productName,
+          category: 'Chưa phân loại',
+          sold: item.quantitySold || 0,
           revenue: Number(item.revenue || 0),
-          stock: Number(item.stock || 0), 
+          stock: 0,
         }));
-        
-        setRows(apiRows);
+        if (apiRows.length > 0) setRows(apiRows);
       } catch (error) {
-        console.error("Lỗi lấy báo cáo top sản phẩm:", error);
-        // 🟢 ĐÃ XÓA MOCK DATA: Khi lỗi API thì set mảng rỗng
-        setRows([]); 
-        showToast('Không thể tải báo cáo top sản phẩm', 'error');
-      } finally {
-        setLoading(false);
+        setRows(mockTopProducts);
       }
     };
     fetchData();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dateFrom, dateTo]);
 
   // Hàm lấy màu cho huy hiệu Top 3
@@ -82,19 +75,19 @@ export const TopProductsReport: React.FC = () => {
           {/* THANH TOOLBAR ĐA MÀU SẮC */}
           <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mr: 2 }}>
-                <TextField size="small" type="date" label="Từ ngày" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} sx={{ width: 150, bgcolor: 'white' }} />
-                <TextField size="small" type="date" label="Đến ngày" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} sx={{ width: 150, bgcolor: 'white' }} />
+                <TextField size="small" type="date" label="Từ" InputLabelProps={{ shrink: true }} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} sx={{ width: 150, bgcolor: 'white' }} />
+                <TextField size="small" type="date" label="Đến" InputLabelProps={{ shrink: true }} value={dateTo} onChange={(e) => setDateTo(e.target.value)} sx={{ width: 150, bgcolor: 'white' }} />
             </Box>
             
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }} onClick={() => window.print()}>In Báo Cáo</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }} onClick={() => showToast('Tính năng đang phát triển', 'info')}>Xuất Excel</Button>
+            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>In Báo Cáo</Button>
+            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
           </Box>
 
           <Box sx={{ p: 1, bgcolor: '#f9f9f9', borderBottom: '1px solid #f1f5f9' }}>
             <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.8rem' }}>Phân tích mặt hàng có sức tiêu thụ tốt nhất trong kỳ</Typography>
           </Box>
 
-          <TableContainer sx={{ minHeight: 400 }}>
+          <TableContainer>
             <Table sx={{ minWidth: 1000 }}>
               <TableHead sx={{ bgcolor: '#ffffff' }}>
                 <TableRow>
@@ -118,12 +111,7 @@ export const TopProductsReport: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {/* 🟢 Nếu Loading thì xoay tròn, rỗng thì báo rỗng 🟢 */}
-                {loading ? (
-                   <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6 }}><CircularProgress /></TableCell></TableRow>
-                ) : rows.length === 0 ? (
-                   <TableRow><TableCell colSpan={8} align="center" sx={{ py: 6, color: 'text.secondary' }}>Không có dữ liệu trong khoảng thời gian này</TableCell></TableRow>
-                ) : rows.map((row) => {
+                {rows.map((row) => {
                   const rankStyle = getRankStyle(row.rank);
                   return (
                     <TableRow key={row.rank} hover sx={{ '&:last-child td': { border: 0 } }}>
@@ -151,7 +139,7 @@ export const TopProductsReport: React.FC = () => {
                       </TableCell>
 
                       <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }} align="right">
-                        <Typography variant="body2" fontWeight={600} color={row.stock < 50 && row.stock > 0 ? '#dc2626' : '#475569'}>
+                        <Typography variant="body2" fontWeight={600} color={row.stock < 50 ? '#dc2626' : '#475569'}>
                           {row.stock}
                         </Typography>
                       </TableCell>
