@@ -105,13 +105,34 @@ export const UsersPage: React.FC = () => {
   };
 
   const handleDelete = async (id: number) => {
-    if (window.confirm('Bạn có chắc chắn muốn xóa/khóa người dùng này?')) {
+    if (window.confirm('Bạn có chắc chắn muốn xóa người dùng này vĩnh viễn?')) {
       try {
         await userAPI.delete(id);
         showToast('Đã thực hiện thành công', 'success');
         loadUsers();
       } catch (error: any) {
         showToast('Lỗi khi thực hiện thao tác', 'error');
+      }
+    }
+  };
+
+  // 3. Hàm xử lý Khóa / Mở khóa tài khoản
+  const handleToggleLock = async (user: any) => {
+    // Vì backend đã tự xử lý logic đảo trạng thái, ta chỉ cần xác định text để hiện thông báo
+    const isCurrentlyActive = user.status === 'ACTIVE' || user.isActive === true; 
+    const actionText = isCurrentlyActive ? 'khóa' : 'mở khóa';
+
+    if (window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản của ${user.fullName}?`)) {
+      try {
+        // Gọi API mới, CHỈ truyền id, KHÔNG truyền body {status} nữa
+        await userAPI.toggleStatus(user.id);
+        
+        showToast(`Đã ${actionText} tài khoản thành công`, 'success');
+        loadUsers(); // Tải lại danh sách sau khi cập nhật
+      } catch (error: any) {
+        // Hiển thị lỗi từ backend trả về (nếu có)
+        const errorMsg = error.response?.data?.message || error.message || `Lỗi khi ${actionText} tài khoản`;
+        showToast(errorMsg, 'error');
       }
     }
   };
@@ -123,7 +144,6 @@ export const UsersPage: React.FC = () => {
         'ADMIN': 'Quản Trị', 
         'MANAGER': 'Quản Lý', 
         'STAFF': 'Nhân Viên' ,
-      
     };
     return roles[role] || role;
   };
@@ -160,23 +180,42 @@ export const UsersPage: React.FC = () => {
                   <TableRow key={user.id} hover>
                     <TableCell>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                        <Avatar sx={{ bgcolor: '#1976d2', width: 32, height: 32, fontSize: '0.8rem' }}>
+                        <Avatar sx={{ bgcolor: user.status === 'ACTIVE' ? '#1976d2' : '#9e9e9e', width: 32, height: 32, fontSize: '0.8rem' }}>
                           {user.fullName?.charAt(0).toUpperCase()}
                         </Avatar>
-                        <Typography variant="body2" sx={{ fontWeight: 500 }}>{user.fullName}</Typography>
+                        <Typography variant="body2" sx={{ fontWeight: 500, color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>
+                          {user.fullName}
+                        </Typography>
                       </Box>
                     </TableCell>
-                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.email}</TableCell>
-                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.phone}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem', color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>{user.email}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem', color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>{user.phone}</TableCell>
                     <TableCell>
-                      <Chip label={getRoleLabel(user.role)} size="small" color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
+                      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                        <Chip label={getRoleLabel(user.role)} size="small" color="primary" variant="outlined" sx={{ fontWeight: 600 }} />
+                        {user.status && user.status !== 'ACTIVE' && (
+                          <Chip label="Đã khóa" size="small" color="error" sx={{ fontWeight: 600, height: 24 }} />
+                        )}
+                      </Box>
                     </TableCell>
-                    <TableCell sx={{ fontSize: '0.85rem' }}>{user.storeName || 'Toàn hệ thống'}</TableCell>
+                    <TableCell sx={{ fontSize: '0.85rem', color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>{user.storeName || 'Toàn hệ thống'}</TableCell>
                     <TableCell align="right">
                       {isSuperAdmin() && (
                         <>
-                          <IconButton size="small" color="primary" onClick={() => handleOpenDialog(user)}><EditIcon fontSize="small" /></IconButton>
-                          <IconButton size="small" color="error" onClick={() => handleDelete(user.id)}><DeleteIcon fontSize="small" /></IconButton>
+                          <IconButton 
+                            size="small" 
+                            color={user.status === 'ACTIVE' ? 'warning' : 'success'} 
+                            onClick={() => handleToggleLock(user)}
+                            title={user.status === 'ACTIVE' ? "Khóa tài khoản" : "Mở khóa tài khoản"}
+                          >
+                            {user.status === 'ACTIVE' ? <LockIcon fontSize="small" /> : <LockOpenIcon fontSize="small" />}
+                          </IconButton>
+                          <IconButton size="small" color="primary" onClick={() => handleOpenDialog(user)} title="Chỉnh sửa">
+                            <EditIcon fontSize="small" />
+                          </IconButton>
+                          <IconButton size="small" color="error" onClick={() => handleDelete(user.id)} title="Xóa">
+                            <DeleteIcon fontSize="small" />
+                          </IconButton>
                         </>
                       )}
                     </TableCell>

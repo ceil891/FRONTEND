@@ -8,14 +8,14 @@ import {
   WarningAmber, GetApp, PictureAsPdf, Store
 } from '@mui/icons-material';
 import {
-  LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
+  BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis,
   CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, Area, AreaChart
 } from 'recharts';
 
 // Import API thực tế của bạn
 import { dashboardAPI, reportAPI, storeAPI } from '../../api/client';
 
-const COLORS = ['#1e40af', '#3b82f6', '#93c5fd', '#94a3b8', '#64748b'];
+const COLORS = ['#1e40af', '#3b82f6', '#93c5fd', '#10b981', '#f59e0b', '#ef4444'];
 
 // --- SUB-COMPONENT: KPI CARD ---
 const KPICard = ({ title, value, subValue, trend, icon, color, loading }: any) => {
@@ -48,26 +48,24 @@ const KPICard = ({ title, value, subValue, trend, icon, color, loading }: any) =
 };
 
 export const DashboardPage = () => {
-  // --- STATES QUẢN LÝ DỮ LIỆU THỰC ---
   const [loading, setLoading] = useState(true);
   const [stores, setStores] = useState<any[]>([]);
   
-  // States bộ lọc
   const [filters, setFilters] = useState({
-    timeRange: 'thang', // ngay, tuan, thang, nam
+    timeRange: 'thang', 
     startDate: '2026-03-01', 
     endDate: '2026-03-31',
     storeId: 'all'
   });
 
-  // States dữ liệu
   const [stats, setStats] = useState<any>({});
   const [trendData, setTrendData] = useState<any[]>([]);
   const [branchData, setBranchData] = useState<any[]>([]);
   const [topProducts, setTopProducts] = useState<any[]>([]);
+  
+  // 🟢 STATE CHO BIỂU ĐỒ CƠ CẤU DANH MỤC 🟢
   const [categoryData, setCategoryData] = useState<any[]>([]);
 
-  // Format tiền tệ
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
   const formatCompactNumber = (number: number) => {
     if (!number) return '0';
@@ -77,7 +75,6 @@ export const DashboardPage = () => {
     return number.toString();
   };
 
-  // --- FETCH DATA TỪ BACKEND ---
   const fetchStores = async () => {
     try {
       const res = await storeAPI.getAll();
@@ -88,35 +85,36 @@ export const DashboardPage = () => {
   const loadAllData = useCallback(async () => {
     setLoading(true);
     try {
-      // Chuẩn bị tham số gọi API
       const apiParams = {
         startDate: filters.startDate,
         endDate: filters.endDate,
         ...(filters.storeId !== 'all' && { storeId: Number(filters.storeId) })
       };
 
-      // 1. Gọi API Tổng quan (Overview)
-      const statsRes = await dashboardAPI.getStats(apiParams);
-      if (statsRes.data?.success) setStats(statsRes.data.data);
-
-      // 2. Gọi API Biểu đồ xu hướng (Line Chart)
-      // Nếu chọn "all", bạn cần API hỗ trợ lấy trend toàn hệ thống. Tạm thời map storeId = 1 nếu chọn all để tránh lỗi backend
       const trendStoreId = filters.storeId === 'all' ? 1 : Number(filters.storeId); 
-      const trendRes = await dashboardAPI.getStoreTrend(trendStoreId, { startDate: filters.startDate, endDate: filters.endDate });
+
+      // 🟢 GỌI TẤT CẢ API CÙNG LÚC, BAO GỒM CẢ DANH MỤC 🟢
+      const [statsRes, trendRes, branchRes, productsRes, catRes] = await Promise.all([
+        dashboardAPI.getStats(apiParams),
+        dashboardAPI.getStoreTrend(trendStoreId, { startDate: filters.startDate, endDate: filters.endDate }),
+        dashboardAPI.getStorePerformance({ startDate: filters.startDate, endDate: filters.endDate }),
+        reportAPI.getProductSales({ startDate: filters.startDate, endDate: filters.endDate, limit: 5 }),
+        reportAPI.getCategoryRatio() // 👉 Đã gắn đúng chỗ!
+      ]);
+
+      if (statsRes.data?.success) setStats(statsRes.data.data);
       if (trendRes.data?.success) setTrendData(trendRes.data.data);
-
-      // 3. Gọi API Báo cáo Chi nhánh (Bar Chart)
-      const branchRes = await dashboardAPI.getStorePerformance({ startDate: filters.startDate, endDate: filters.endDate });
       if (branchRes.data?.success) setBranchData(branchRes.data.data);
-
-      // 4. Gọi API Top Sản phẩm (List)
-      const productsRes = await reportAPI.getProductSales({ startDate: filters.startDate, endDate: filters.endDate, limit: 5 });
       if (productsRes.data?.success) setTopProducts(productsRes.data.data);
-
-      // 5. [Ghi chú] API Category Share (Pie chart) chưa có trong client.ts của bạn, 
-      // Cần gọi API thực tế nếu có, tạm gán rỗng để biểu đồ chờ dữ liệu
-      // const catRes = await reportAPI.getCategoryShare(...); 
-      // setCategoryData(catRes.data.data);
+      
+      // 🟢 XỬ LÝ DỮ LIỆU ĐỂ PIE CHART VẼ ĐƯỢC 🟢
+      if (catRes.data?.success) {
+        const mappedCats = (catRes.data.data || []).map((c: any) => ({
+          name: c.categoryName || c[0] || 'Khác',
+          value: Number(c.productCount || c[1]) || 0
+        }));
+        setCategoryData(mappedCats);
+      }
 
     } catch (error) {
       console.error('Lỗi khi tải dữ liệu Dashboard:', error);
@@ -124,7 +122,7 @@ export const DashboardPage = () => {
       setLoading(false);
     }
   }, [filters]);
-reportAPI.getCategoryRatio()
+
   useEffect(() => { fetchStores(); }, []);
   useEffect(() => { loadAllData(); }, [loadAllData]);
 
@@ -173,7 +171,7 @@ reportAPI.getCategoryRatio()
         </FormControl>
       </Paper>
 
-      {/* 3. CẢNH BÁO (ALERTS) - Lấy từ data thực */}
+      {/* 3. CẢNH BÁO (ALERTS) */}
       {stats.lowStockProducts > 0 && (
         <Grid container spacing={2} sx={{ mb: 4 }}>
           <Grid item xs={12}>
@@ -194,18 +192,16 @@ reportAPI.getCategoryRatio()
           <KPICard title="Tổng Đơn Hàng" value={stats.totalOrders?.toLocaleString()} subValue="vs kỳ trước" trend={stats.orderGrowth} icon={<ShoppingBag fontSize="large"/>} color="#3b82f6" loading={loading} />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          {/* Thay thế Khách Hàng bằng data thực (nếu backend có, hiện đang placeholder bằng tổng số sản phẩm bán) */}
           <KPICard title="Tổng Sản Phẩm Xuất" value={stats.totalProducts?.toLocaleString()} subValue="đang kinh doanh" trend={null} icon={<People fontSize="large"/>} color="#0ea5e9" loading={loading} />
         </Grid>
         <Grid item xs={12} sm={6} md={3}>
-          {/* Cần API Profit. Tạm thời hiển thị lợi nhuận giả định 30% doanh thu nếu backend chưa trả về */}
           <KPICard title="Lợi Nhuận Ước Tính" value={formatCompactNumber((stats.totalRevenue || 0) * 0.3)} subValue="Biên lợi nhuận 30%" trend={stats.revenueGrowth} icon={<TrendingUp fontSize="large"/>} color="#10b981" loading={loading} />
         </Grid>
       </Grid>
 
       {/* 5. KHU VỰC BIỂU ĐỒ CHÍNH */}
       <Grid container spacing={3} sx={{ mb: 4 }}>
-        {/* Area Chart: Doanh thu theo thời gian */}
+        {/* Area Chart: Doanh thu */}
         <Grid item xs={12} lg={8}>
           <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', height: 400 }}>
             <CardContent>
@@ -235,14 +231,14 @@ reportAPI.getCategoryRatio()
           </Card>
         </Grid>
 
-        {/* Pie Chart: Tỷ trọng danh mục */}
+        {/* 🟢 Pie Chart: Tỷ trọng danh mục ĐÃ ĐƯỢC KÍCH HOẠT 🟢 */}
         <Grid item xs={12} lg={4}>
           <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0', height: 400 }}>
             <CardContent>
               <Typography variant="h6" fontWeight={800} color="#1e293b" mb={1}>Cơ cấu Danh mục</Typography>
               <Box sx={{ width: '100%', height: 320 }}>
                  {loading ? <Skeleton variant="circular" width={250} height={250} sx={{ mx: 'auto', mt: 4 }} /> : categoryData.length === 0 ? (
-                  <Typography color="text.secondary" align="center" mt={10}>Cần bổ sung API Tỷ lệ danh mục</Typography>
+                  <Typography color="text.secondary" align="center" mt={10}>Không có dữ liệu danh mục</Typography>
                  ) : (
                   <ResponsiveContainer width="100%" height="100%">
                     <PieChart>
