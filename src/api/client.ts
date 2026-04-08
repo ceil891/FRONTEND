@@ -145,6 +145,9 @@ export const supplierAPI = {
   create: (data: any) => apiClient.post('/api/core/suppliers', data),
   update: (id: number, data: any) => apiClient.put(`/api/core/suppliers/${id}`, data),
   delete: (id: number) => apiClient.delete(`/api/core/suppliers/${id}`),
+  getProducts: (id: number) => apiClient.get(`/api/core/suppliers/${id}/products`),
+  configProducts: (id: number, data: any) => apiClient.post(`/api/core/suppliers/${id}/products`, data),
+  
 };
 
 export const areaAPI = {
@@ -215,11 +218,12 @@ export const orderAPI = {
 
 // --- PHIẾU NHẬP, XUẤT VÀ KIỂM KHO ---
 export const importTicketAPI = {
-  getAll: () => apiClient.get('/api/inventory/import-tickets'),
+  getAll: (params?: any) => apiClient.get('/api/inventory/import-tickets', { params }),
   getById: (id: number) => apiClient.get(`/api/inventory/import-tickets/${id}`),
   create: (data: any) => apiClient.post('/api/inventory/import-tickets', data),
   update: (id: number, data: any) => apiClient.put(`/api/inventory/import-tickets/${id}`, data),
-  cancel: (id: number) => apiClient.put(`/api/inventory/import-tickets/${id}/cancel`)
+  cancel: (id: number) => apiClient.put(`/api/inventory/import-tickets/${id}/cancel`),
+  updateStatus: (id: number, status: string) => apiClient.patch(`/api/inventory/import-tickets/${id}/status`, { status }),
 };
 
 export const exportTicketAPI = {

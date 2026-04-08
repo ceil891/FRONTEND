@@ -27,7 +27,7 @@ export const UsersPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     fullName: '', email: '', password: '', phone: '',
-    role: 'STAFF', storeId: '',
+    role: 'SALES_STAFF', storeId: '', 
   });
 
   useEffect(() => {
@@ -65,28 +65,27 @@ export const UsersPage: React.FC = () => {
       setFormData({
         fullName: user.fullName || '',
         email: user.email || '',
-        password: '', // Không hiện mật khẩu cũ vì lý do bảo mật
+        password: '', 
         phone: user.phone || '',
-        role: user.role || 'STAFF',
+        role: user.role || 'SALES_STAFF',
         storeId: user.storeId ? user.storeId.toString() : '',
       });
     } else {
       setEditingUser(null);
-      setFormData({ fullName: '', email: '', password: '', phone: '', role: 'STAFF', storeId: '' });
+      setFormData({ fullName: '', email: '', password: '', phone: '', role: 'SALES_STAFF', storeId: '' });
     }
     setOpenDialog(true);
   };
 
   const handleSave = async () => {
-    // Validate nhanh
-    if (!formData.fullName || !formData.email || (!editingUser && !formData.password)) {
+    // Validate: Đã thêm !formData.storeId để bắt buộc chọn cửa hàng
+    if (!formData.fullName || !formData.email || !formData.storeId || (!editingUser && !formData.password)) {
        return showToast('Vui lòng điền đủ các trường bắt buộc (*)', 'warning');
     }
 
     const payload = {
       ...formData,
-      // Đảm bảo gửi đúng kiểu dữ liệu Backend cần
-      storeId: formData.storeId ? parseInt(formData.storeId) : null
+      storeId: parseInt(formData.storeId)
     };
 
     try {
@@ -116,34 +115,30 @@ export const UsersPage: React.FC = () => {
     }
   };
 
-  // 3. Hàm xử lý Khóa / Mở khóa tài khoản
   const handleToggleLock = async (user: any) => {
-    // Vì backend đã tự xử lý logic đảo trạng thái, ta chỉ cần xác định text để hiện thông báo
     const isCurrentlyActive = user.status === 'ACTIVE' || user.isActive === true; 
     const actionText = isCurrentlyActive ? 'khóa' : 'mở khóa';
 
     if (window.confirm(`Bạn có chắc chắn muốn ${actionText} tài khoản của ${user.fullName}?`)) {
       try {
-        // Gọi API mới, CHỈ truyền id, KHÔNG truyền body {status} nữa
         await userAPI.toggleStatus(user.id);
-        
         showToast(`Đã ${actionText} tài khoản thành công`, 'success');
-        loadUsers(); // Tải lại danh sách sau khi cập nhật
+        loadUsers(); 
       } catch (error: any) {
-        // Hiển thị lỗi từ backend trả về (nếu có)
         const errorMsg = error.response?.data?.message || error.message || `Lỗi khi ${actionText} tài khoản`;
         showToast(errorMsg, 'error');
       }
     }
   };
 
-  // Hàm dịch Role sang tiếng Việt để hiển thị trên bảng
   const getRoleLabel = (role: string) => {
     const roles: any = { 
         'SUPER_ADMIN': 'Siêu Quản Trị', 
-        'ADMIN': 'Quản Trị', 
-        'MANAGER': 'Quản Lý', 
-        'STAFF': 'Nhân Viên' ,
+        'ADMIN': 'Quản Trị Viên', 
+        'MANAGER': 'Quản Lý Cửa Hàng', 
+        'SALES_STAFF': 'Nhân Viên Bán Hàng',
+        'WAREHOUSE_STAFF': 'Thủ Kho',
+        'CASHIER': 'Thu Ngân',
     };
     return roles[role] || role;
   };
@@ -198,7 +193,8 @@ export const UsersPage: React.FC = () => {
                         )}
                       </Box>
                     </TableCell>
-                    <TableCell sx={{ fontSize: '0.85rem', color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>{user.storeName || 'Toàn hệ thống'}</TableCell>
+                    {/* Sửa lại hiển thị đơn vị trên bảng */}
+                    <TableCell sx={{ fontSize: '0.85rem', color: user.status === 'ACTIVE' ? 'inherit' : 'text.disabled' }}>{user.storeName || '---'}</TableCell>
                     <TableCell align="right">
                       {isSuperAdmin() && (
                         <>
@@ -249,14 +245,16 @@ export const UsersPage: React.FC = () => {
                   <MenuItem value="SUPER_ADMIN">Siêu Quản Trị</MenuItem>
                   <MenuItem value="ADMIN">Quản Trị Viên</MenuItem>
                   <MenuItem value="MANAGER">Quản Lý Cửa Hàng</MenuItem>
-                  <MenuItem value="STAFF">Nhân Viên</MenuItem>
+                  <MenuItem value="SALES_STAFF">Nhân Viên Bán Hàng</MenuItem>
+                  <MenuItem value="WAREHOUSE_STAFF">Thủ Kho</MenuItem>
+                  <MenuItem value="CASHIER">Thu Ngân</MenuItem>
                 </Select>
               </FormControl>
 
+              {/* Đã xóa lựa chọn "Trụ sở chính" và bắt buộc chọn cửa hàng */}
               <FormControl fullWidth size="small">
-                <InputLabel>Cửa Hàng Làm Việc</InputLabel>
-                <Select label="Cửa Hàng Làm Việc" value={formData.storeId} onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}>
-                  <MenuItem value="">Trụ sở chính (Toàn hệ thống)</MenuItem>
+                <InputLabel>Cửa Hàng Làm Việc (*)</InputLabel>
+                <Select label="Cửa Hàng Làm Việc (*)" value={formData.storeId} onChange={(e) => setFormData({ ...formData, storeId: e.target.value })}>
                   {stores.map((s) => <MenuItem key={s.id} value={s.id.toString()}>{s.name}</MenuItem>)}
                 </Select>
               </FormControl>

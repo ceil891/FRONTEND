@@ -3,15 +3,42 @@ import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, TextField, MenuItem,
   FormControl, InputLabel, Select, Button, CircularProgress,
-  Dialog, DialogTitle, DialogContent, DialogActions, Divider
+  Dialog, DialogTitle, DialogContent, DialogActions, Divider, Grid,
+  IconButton
 } from '@mui/material';
 import {
   Add as AddIcon, Visibility as ViewIcon, Print as PrintIcon,
-  Sync as SyncIcon, Payments as PaymentIcon
+  Sync as SyncIcon, Payments as PaymentIcon, Close as CloseIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-import { cashbookAPI, CashbookTransactionResponse } from '../../api/client';
+import { cashbookAPI } from '../../api/client'; 
 import dayjs from 'dayjs';
+
+// 🟢 TỰ ĐỊNH NGHĨA KIỂU DỮ LIỆU TẠI ĐÂY ĐỂ TRÁNH LỖI IMPORT
+export interface CashbookTransactionResponse {
+  id: number;
+  code: string;
+  transactionDate: string;
+  type: string;
+  method: string;
+  category: string;
+  description: string;
+  referenceName: string;
+  amount: number;
+  balanceAfterTransaction?: number;
+  status?: string;
+  storeName?: string;
+  creatorName?: string;
+}
+
+
+const EXPENSE_CATEGORIES = [
+  "Chi trả nhà cung cấp",
+  "Chi khi Nhập hàng khách trả lại",
+  "Chi trả tiền Shipper",
+  "Chi trả lương nhân viên",
+  "Chi phí vận hành khác"
+];
 
 export const PaymentPage: React.FC = () => {
   // --- STATES QUẢN LÝ DỮ LIỆU ---
@@ -23,9 +50,10 @@ export const PaymentPage: React.FC = () => {
   // --- STATES CHO DIALOG LẬP PHIẾU ---
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [formData, setFormData] = useState({
+    category: EXPENSE_CATEGORIES[0], // 🟢 Mặc định chọn dòng đầu tiên
     receiver: '',
     amount: '',
-    reason: '',
+    description: '',
     method: 'CASH' as 'CASH' | 'BANK_TRANSFER'
   });
 
@@ -40,7 +68,7 @@ export const PaymentPage: React.FC = () => {
     setLoading(true);
     try {
       const res = await cashbookAPI.getAll({
-        type: 'EXPENSE', // Chỉ lấy loại CHI
+        type: 'EXPENSE', 
         method: methodFilter === 'ALL' ? undefined : (methodFilter as any),
         search: searchQuery
       });
@@ -59,25 +87,27 @@ export const PaymentPage: React.FC = () => {
 
   // 2. Hàm lưu phiếu chi mới
   const handleSave = async () => {
-    if (!formData.receiver || !formData.amount) {
-      return showToast('Vui lòng nhập đủ thông tin bắt buộc', 'warning');
+    if (!formData.receiver || !formData.amount || !formData.category) {
+      return showToast('Vui lòng nhập đủ thông tin bắt buộc (*)', 'warning');
     }
     try {
       setLoading(true);
       await cashbookAPI.create({
         type: 'EXPENSE',
         method: formData.method,
-        category: "Chi phí vận hành", // Hạng mục mặc định
+        category: formData.category, // 🟢 Đẩy hạng mục đã chọn xuống Backend
         referenceName: formData.receiver,
         amount: Number(formData.amount),
-        description: formData.reason,
+        description: formData.description,
         storeId: 1, // Nên lấy từ Context Store
         creatorId: 1 // Nên lấy từ Auth User
       });
 
-      showToast('Tạo phiếu chi thành công & Đã sync Google Sheets!', 'success');
+      showToast('Tạo phiếu chi thành công & Đã lưu lịch sử!', 'success');
       setOpenAddDialog(false);
-      setFormData({ receiver: '', amount: '', reason: '', method: 'CASH' });
+      
+      // Reset form sau khi lưu
+      setFormData({ category: EXPENSE_CATEGORIES[0], receiver: '', amount: '', description: '', method: 'CASH' });
       fetchPayments();
     } catch (error: any) {
       showToast(error.response?.data?.message || 'Lỗi khi tạo phiếu chi', 'error');
@@ -131,6 +161,7 @@ export const PaymentPage: React.FC = () => {
               <TableRow>
                 <TableCell sx={{ fontWeight: 700 }}>Ngày Lập</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Mã Phiếu</TableCell>
+                <TableCell sx={{ fontWeight: 700 }}>Hạng Mục Chi</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Người Nhận</TableCell>
                 <TableCell sx={{ fontWeight: 700 }}>Hình Thức</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 700 }}>Số Tiền (-)</TableCell>
@@ -139,13 +170,19 @@ export const PaymentPage: React.FC = () => {
             </TableHead>
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}><CircularProgress size={30} /></TableCell></TableRow>
               ) : payments.length === 0 ? (
-                <TableRow><TableCell colSpan={6} align="center" sx={{ py: 5 }}>Không tìm thấy phiếu chi nào</TableCell></TableRow>
+                <TableRow><TableCell colSpan={7} align="center" sx={{ py: 5 }}>Không tìm thấy phiếu chi nào</TableCell></TableRow>
               ) : payments.map((row) => (
                 <TableRow key={row.id} hover>
                   <TableCell>{dayjs(row.transactionDate).format('DD/MM/YYYY HH:mm')}</TableCell>
                   <TableCell sx={{ fontWeight: 700, color: '#d32f2f' }}>{row.code}</TableCell>
+                  {/* Hiển thị Category ở ngoài bảng luôn cho tiện */}
+                  <TableCell>
+                    <Typography variant="body2" fontWeight={600} color="text.secondary">
+                      {row.category}
+                    </Typography>
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 600 }}>{row.referenceName}</TableCell>
                   <TableCell>
                     <Chip 
@@ -182,7 +219,11 @@ export const PaymentPage: React.FC = () => {
               </Box>
               <Divider />
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="body2" color="text.secondary">Người nhận tiền:</Typography>
+                <Typography variant="body2" color="text.secondary">Hạng mục chi:</Typography>
+                <Typography variant="body2" fontWeight={600} color="primary">{selectedPayment.category}</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="body2" color="text.secondary">Đối tượng nhận:</Typography>
                 <Typography variant="body2" fontWeight={600}>{selectedPayment.referenceName}</Typography>
               </Box>
               <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
@@ -208,25 +249,75 @@ export const PaymentPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* --- DIALOG LẬP PHIẾU MỚI --- */}
+      {/* --- 🟢 DIALOG LẬP PHIẾU MỚI (ĐÃ ĐƯỢC CHUẨN HOÁ GIAO DIỆN) --- */}
       <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700 }}>LẬP PHIẾU CHI MỚI</DialogTitle>
-        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-          <TextField label="Người nhận tiền (*)" fullWidth size="small" autoFocus value={formData.receiver} onChange={(e) => setFormData({...formData, receiver: e.target.value})} />
-          <TextField label="Số tiền chi (VNĐ) (*)" type="number" fullWidth size="small" value={formData.amount} onChange={(e) => setFormData({...formData, amount: e.target.value})} />
-          <FormControl fullWidth size="small">
-            <InputLabel>Hình thức</InputLabel>
-            <Select value={formData.method} label="Hình thức" onChange={(e) => setFormData({...formData, method: e.target.value as any})}>
-              <MenuItem value="CASH">Tiền mặt</MenuItem>
-              <MenuItem value="BANK_TRANSFER">Chuyển khoản</MenuItem>
+        <DialogTitle sx={{ fontWeight: 700, bgcolor: '#f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          THÔNG TIN PHIẾU CHI
+          <IconButton size="small" onClick={() => setOpenAddDialog(false)}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent sx={{ pt: 3, display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+          
+          <FormControl fullWidth size="small" sx={{ mt: 1 }}>
+              <InputLabel>Nội dung chi (Hạng mục) (*)</InputLabel>
+            <Select 
+              value={formData.category} 
+              label="Nội dung chi (Hạng mục) (*)" 
+              onChange={(e) => setFormData({...formData, category: e.target.value})}
+            >
+              {EXPENSE_CATEGORIES.map(cat => (
+                <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+              ))}
             </Select>
           </FormControl>
-          <TextField label="Lý do chi / Ghi chú" multiline rows={2} fullWidth size="small" value={formData.reason} onChange={(e) => setFormData({...formData, reason: e.target.value})} />
+
+          <TextField 
+            label="Đối tượng (KH/NCC/Nhân viên) (*)" 
+            fullWidth size="small" 
+            placeholder="Ví dụ: Anh Nguyễn Văn A..."
+            value={formData.receiver} 
+            onChange={(e) => setFormData({...formData, receiver: e.target.value})} 
+          />
+          
+          <Grid container spacing={2}>
+            <Grid item xs={12} sm={6}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Hình thức thanh toán</InputLabel>
+                <Select 
+                  value={formData.method} 
+                  label="Hình thức thanh toán" 
+                  onChange={(e) => setFormData({...formData, method: e.target.value as any})}
+                >
+                  <MenuItem value="CASH">Tiền mặt</MenuItem>
+                  <MenuItem value="BANK_TRANSFER">Chuyển khoản</MenuItem>
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={6}>
+              <TextField 
+                label="Số tiền (VNĐ) (*)" 
+                type="number" fullWidth size="small" 
+                value={formData.amount} 
+                onChange={(e) => setFormData({...formData, amount: e.target.value})} 
+                sx={{
+                  '& .MuiInputBase-root': { color: '#dc2626', fontWeight: 'bold' }
+                }}
+              />
+            </Grid>
+          </Grid>
+
+          <TextField 
+            label="Nội dung / Ghi chú chi tiết" 
+            multiline rows={3} fullWidth size="small" 
+            placeholder="Nhập chi tiết diễn giải lý do chi tiền..."
+            value={formData.description} 
+            onChange={(e) => setFormData({...formData, description: e.target.value})} 
+          />
+
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setOpenAddDialog(false)}>Hủy</Button>
+        <DialogActions sx={{ p: 2, bgcolor: '#f8fafc' }}>
+          <Button onClick={() => setOpenAddDialog(false)} color="inherit">Đóng</Button>
           <Button variant="contained" onClick={handleSave} disabled={loading} sx={{ bgcolor: '#00a65a' }}>
-            {loading ? 'Đang lưu...' : 'Lập Phiếu Chi'}
+            {loading ? 'Đang lưu...' : 'Lưu Phiếu Chi'}
           </Button>
         </DialogActions>
       </Dialog>

@@ -4,22 +4,21 @@ import {
   TableContainer, TableHead, TableRow, TextField, Button, Pagination,
   Chip, CircularProgress, Dialog, DialogTitle, DialogContent,
   DialogActions, Grid, IconButton, MenuItem, Select, FormControl, 
-  InputLabel, InputAdornment, Divider, List, ListItem, ListItemText, 
-  Stack, ListItemButton, Checkbox, Paper
+  InputLabel, InputAdornment, Divider, List, ListItemButton, ListItemText, 
+  Stack, Checkbox, Paper
 } from '@mui/material';
 import {
   Add as AddIcon, Print as PrintIcon, FileDownload as ExcelIcon, FilterAlt as FilterIcon,
   Visibility as ViewIcon, AccountBalanceWallet as DebtIcon, Close as CloseIcon,
   Search as SearchIcon, AddCircle as AddCircleIcon, 
   Remove as RemoveIcon, PersonAdd as PersonAddIcon,
-  Lock as LockIcon
+  Lock as LockIcon, AttachMoney as MoneyIcon
 } from '@mui/icons-material';
 import BusinessIcon from '@mui/icons-material/Business';
 import { useToastStore } from '../../store/toastStore';
-import { useAuthStore } from '../../store/authStore'; // 🟢 Import store để lấy tài khoản đăng nhập
-import { importTicketAPI, supplierAPI, productAPI, storeAPI } from '../../api/client';
+import { useAuthStore } from '../../store/authStore'; 
+import { importTicketAPI, supplierAPI, productAPI, storeAPI, cashbookAPI } from '../../api/client';
 
-// --- TYPES ---
 interface BackendImportTicket {
   id: number;
   code?: string;
@@ -35,52 +34,38 @@ interface BackendImportTicket {
   status?: string;
 }
 
-interface Supplier { id: number; name: string; phone: string; }
-interface ProductVariant { 
-  id: number; 
-  variantName?: string; 
-  name?: string; 
-  sku: string; 
-  costPrice?: number; 
-  basePrice?: number; 
-}
-
-// --- MAIN COMPONENT ---
 export const ImportInventoryPage: React.FC = () => {
-  // 🟢 Lấy thông tin User đang đăng nhập
   const { user } = useAuthStore(); 
+  const { showToast } = useToastStore();
 
-  // 1. STATE TỔNG QUAN
   const [searchQuery, setSearchQuery] = useState('');
   const [imports, setImports] = useState<BackendImportTicket[]>([]);
   const [loading, setLoading] = useState(false);
   const [selectedIds, setSelectedIds] = useState<number[]>([]); 
   
-  // 2. STATE DANH MỤC (API)
-  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]); 
   const [stores, setStores] = useState<any[]>([]); 
   const [currentStoreId, setCurrentStoreId] = useState<number | string>(''); 
   
-  // 3. STATE DIALOG
   const [openDetail, setOpenDetail] = useState(false);
   const [openAddDialog, setOpenAddDialog] = useState(false);
   const [openPaymentDialog, setOpenPaymentDialog] = useState(false); 
   const [selectedTicket, setSelectedTicket] = useState<any>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  // State Dialog Khóa / Hủy siêu đẹp
   const [cancelConfirm, setCancelConfirm] = useState<{open: boolean, id: number | null, code: string}>({ open: false, id: null, code: '' });
   const [lockConfirm, setLockConfirm] = useState<{open: boolean, id: number | null, code: string}>({ open: false, id: null, code: '' });
 
-  const { showToast } = useToastStore();
+  // 🟢 STATE CHO DIALOG THANH TOÁN ĐÍCH DANH PHIẾU
+  const [payTicketDialog, setPayTicketDialog] = useState<{open: boolean, ticket: any}>({open: false, ticket: null});
+  const [ticketPayAmount, setTicketPayAmount] = useState(0);
+  const [ticketPayMethod, setTicketPayMethod] = useState('CASH'); // 🟢 Thêm state chọn phương thức
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
   };
 
-  // --- API DATA FETCHING ---
-  
   const loadCategories = async () => {
     try {
       const [supRes, prodRes, storeRes] = await Promise.all([
@@ -97,11 +82,19 @@ export const ImportInventoryPage: React.FC = () => {
       const rawProducts = prodRes.data?.data || prodRes.data || [];
       const allVariants = rawProducts.flatMap((product: any) => {
         if (product.variants && Array.isArray(product.variants)) {
-          return product.variants.map((v: any) => ({
-            ...v,
-            variantName: v.variantName || `${product.name} - ${v.colorName || ''} ${v.sizeName || ''}`.trim(),
-            costPrice: v.costPrice || product.baseCostPrice || 0 
-          }));
+          return product.variants.map((v: any) => {
+            const color = v.colorName || v.color?.name || '';
+            const size = v.sizeName || v.size?.name || '';
+            const attributes = [color, size].filter(Boolean).join(' - ');
+            const pName = product.name || product.tenSanPham;
+            const displayName = attributes ? `${pName} (${attributes})` : pName;
+
+            return {
+              ...v,
+              variantName: displayName,
+              costPrice: v.costPrice || product.baseCostPrice || product.giaNhap || 0 
+            };
+          });
         }
         return [];
       });
@@ -128,8 +121,6 @@ export const ImportInventoryPage: React.FC = () => {
   useEffect(() => { loadCategories(); }, []);
   useEffect(() => { fetchImportTickets(); }, [currentStoreId]);
 
-  // --- LOGIC HÀNH ĐỘNG CỦA TỪNG PHIẾU ---
-  
   const handleViewDetail = async (id: number) => {
     try {
       setOpenDetail(true); setDetailLoading(true);
@@ -166,7 +157,35 @@ export const ImportInventoryPage: React.FC = () => {
     }
   };
 
-  // --- LOGIC LỌC & CHỌN BẢNG ---
+  const handleConfirmPayTicket = async () => {
+    if (ticketPayAmount <= 0) return showToast('Số tiền không hợp lệ', 'warning');
+    if (ticketPayAmount > payTicketDialog.ticket.debtAmount) return showToast('Số tiền trả không được lớn hơn công nợ của phiếu này', 'warning');
+
+    const supplier = suppliers.find(s => s.name === payTicketDialog.ticket.supplierName);
+    if (!supplier) return showToast('Lỗi: Không xác định được Nhà cung cấp của phiếu này', 'error');
+
+    try {
+      setLoading(true);
+      const payload = {
+        supplierId: supplier.id,
+        amount: ticketPayAmount,
+        method: ticketPayMethod, // 🟢 Lấy phương thức động (CASH/BANK) thay vì hardcode
+        notes: `Thanh toán cho phiếu nhập kho ${payTicketDialog.ticket.code}`,
+        storeId: Number(currentStoreId),
+        creatorId: user?.id,
+        importTicketId: payTicketDialog.ticket.id
+      };
+      await cashbookAPI.paySupplier(payload);
+      showToast('Đã thanh toán phiếu thành công!', 'success');
+      setPayTicketDialog({open: false, ticket: null});
+      fetchImportTickets();
+    } catch (error: any) {
+      showToast(error.message || 'Lỗi hệ thống khi thanh toán', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const filteredImports = useMemo(() => {
     const kw = searchQuery.trim().toLowerCase();
     if (!kw) return imports;
@@ -186,11 +205,16 @@ export const ImportInventoryPage: React.FC = () => {
     return <Chip label={status} size="small" sx={{ bgcolor: '#f1f5f9', color: '#475569', fontWeight: 600, border: 'none' }} />;
   };
 
-  // --- LOGIC FORM LẬP PHIẾU NHẬP MỚI ---
-  const initialForm = { supplierId: '', importDate: new Date().toISOString().split('T')[0], paidAmount: 0, items: [] as any[] };
+  // 🟢 THÊM paymentMethod VÀO STATE CỦA FORM LẬP PHIẾU NHẬP
+  const initialForm = { supplierId: '', storeId: '', importDate: new Date().toISOString().split('T')[0], paidAmount: 0, paymentMethod: 'CASH', items: [] as any[] };
   const [addFormData, setAddFormData] = useState(initialForm);
   const [productSearchKey, setProductSearchKey] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const handleOpenAddDialog = () => {
+    setAddFormData({ ...initialForm, storeId: currentStoreId.toString() });
+    setOpenAddDialog(true);
+  };
 
   const calculatedAmounts = useMemo(() => {
     const totalAmount = addFormData.items.reduce((sum, item) => sum + (item.quantity * item.importPrice), 0);
@@ -201,7 +225,7 @@ export const ImportInventoryPage: React.FC = () => {
 
   const filteredProducts = useMemo(() => {
     const kw = productSearchKey.trim().toLowerCase();
-    if (kw.length < 1) return []; // 🟢 Tối ưu: gõ 1 chữ là ra
+    if (kw.length < 1) return []; 
     return products.filter(p => (p.variantName || '').toLowerCase().includes(kw) || (p.sku || '').toLowerCase().includes(kw));
   }, [productSearchKey, products]);
 
@@ -219,16 +243,17 @@ export const ImportInventoryPage: React.FC = () => {
   };
 
   const handleSaveImportTicket = async () => {
-    if (!addFormData.supplierId || addFormData.items.length === 0) {
-      showToast('Vui lòng chọn Nhà cung cấp và thêm ít nhất 1 sản phẩm', 'warning'); return;
+    if (!addFormData.supplierId || !addFormData.storeId || addFormData.items.length === 0) {
+      showToast('Vui lòng chọn Cửa hàng, Nhà cung cấp và thêm ít nhất 1 sản phẩm', 'warning'); return;
     }
     try {
       setSubmitting(true);
       const payload = {
         supplierId: Number(addFormData.supplierId),
-        storeId: Number(currentStoreId), 
+        storeId: Number(addFormData.storeId),
         importDate: addFormData.importDate,
         paidAmount: calculatedAmounts.paidAmount,
+        paymentMethod: addFormData.paymentMethod, // 🟢 TRUYỀN PHƯƠNG THỨC TT XUỐNG BACKEND
         details: addFormData.items.map(item => ({
           productVariantId: item.variantId,
           quantity: item.quantity,          
@@ -247,10 +272,8 @@ export const ImportInventoryPage: React.FC = () => {
     }
   };
 
-  // --- COMPONENT RENDER ---
   return (
     <Box className="fade-in">
-      {/* HEADER & CHỌN CỬA HÀNG */}
       <Box sx={{ bgcolor: '#3498db', color: 'white', p: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="subtitle1" sx={{ fontWeight: 600 }}>Kho vận / Nhập hàng</Typography>
         <Select
@@ -262,7 +285,6 @@ export const ImportInventoryPage: React.FC = () => {
         </Select>
       </Box>
 
-      {/* TOOLBAR */}
       <Box sx={{ px: 3 }}>
         <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
           <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
@@ -273,13 +295,9 @@ export const ImportInventoryPage: React.FC = () => {
                 sx={{ width: 280, bgcolor: 'white', '& .MuiInputBase-root': { borderRadius: '20px'} }}
                 InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small"/></InputAdornment> }}
               />
-              <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={() => setOpenAddDialog(true)} sx={{ bgcolor: '#00a65a', textTransform: 'none' }}>Lập Phiếu Nhập</Button>
-              <Button size="small" variant="contained" startIcon={<DebtIcon />} onClick={() => setOpenPaymentDialog(true)} sx={{ bgcolor: '#f39c12', textTransform: 'none' }}>Thanh Toán Nợ</Button>
-              <Button size="small" variant="outlined" startIcon={<PrintIcon />} sx={{ color: '#475569', borderColor: '#cbd5e1', textTransform: 'none' }}>In DS</Button>
-              <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', textTransform: 'none' }}>Xuất Excel</Button>
+              <Button size="small" variant="contained" startIcon={<AddIcon />} onClick={handleOpenAddDialog} sx={{ bgcolor: '#00a65a', textTransform: 'none' }}>Lập Phiếu Nhập</Button>
             </Box>
 
-            {/* BẢNG DỮ LIỆU */}
             <TableContainer sx={{ minHeight: 400 }}>
               <Table sx={{ minWidth: 1200 }}>
                 <TableHead sx={{ bgcolor: '#f8fafc' }}>
@@ -296,7 +314,7 @@ export const ImportInventoryPage: React.FC = () => {
                   {loading ? (
                     <TableRow><TableCell colSpan={11} align="center" sx={{ py: 4 }}><CircularProgress /></TableCell></TableRow>
                   ) : filteredImports.length === 0 ? (
-                     <TableRow><TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>Không có dữ liệu phiếu nhập</TableCell></TableRow>
+                      <TableRow><TableCell colSpan={11} align="center" sx={{ py: 4, color: 'text.secondary' }}>Không có dữ liệu phiếu nhập</TableCell></TableRow>
                   ) : (
                     filteredImports.map((row, idx) => {
                       const isCancelled = row.status?.toUpperCase() === 'CANCELLED';
@@ -307,35 +325,33 @@ export const ImportInventoryPage: React.FC = () => {
                         <TableRow key={row.id} hover selected={isSelected} sx={{ bgcolor: isCancelled ? '#fef2f2' : 'inherit' }}>
                           <TableCell padding="checkbox"><Checkbox size="small" checked={isSelected} onChange={() => setSelectedIds(prev => prev.includes(row.id) ? prev.filter(i => i !== row.id) : [...prev, row.id])} /></TableCell>
                           <TableCell sx={{ fontSize: '0.85rem', color: '#64748b' }}>{idx + 1}</TableCell>
-                          
-                          {/* CỘT THAO TÁC CÓ NÚT KHÓA */}
                           <TableCell align="center">
                             <Box sx={{ display: 'flex', justifyContent: 'center', gap: 1 }}>
                               <Box onClick={() => handleViewDetail(row.id)} sx={{ bgcolor: '#00c0ef', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer' }} title="Xem chi tiết"><ViewIcon sx={{ fontSize: 14 }} /></Box>
                               
                               {!isCancelled && !isCompleted && (
-                                <Box onClick={() => setLockConfirm({open: true, id: row.id, code: row.code || `PN${row.id}`})} sx={{ bgcolor: '#f39c12', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer' }} title="Chốt phiếu"><LockIcon sx={{ fontSize: 14 }} /></Box>
+                                <Box onClick={() => { setPayTicketDialog({open: true, ticket: row}); setTicketPayAmount(row.debtAmount || 0); setTicketPayMethod('CASH'); }} sx={{ bgcolor: '#10b981', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer' }} title="Thanh toán nợ cho phiếu này">
+                                  <MoneyIcon sx={{ fontSize: 14 }} />
+                                </Box>
                               )}
 
+                              {!isCancelled && !isCompleted && (
+                                <Box onClick={() => setLockConfirm({open: true, id: row.id, code: row.code || `PN${row.id}`})} sx={{ bgcolor: '#f39c12', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer' }} title="Chốt phiếu"><LockIcon sx={{ fontSize: 14 }} /></Box>
+                              )}
                               {!isCancelled && !isCompleted && (
                                 <Box onClick={() => setCancelConfirm({open: true, id: row.id, code: row.code || `PN${row.id}`})} sx={{ bgcolor: '#dd4b39', color: 'white', p: 0.4, borderRadius: 0.5, cursor: 'pointer' }} title="Hủy phiếu"><CloseIcon sx={{ fontSize: 14 }} /></Box>
                               )}
                             </Box>
                           </TableCell>
-                          
-                          {/* CÁC CỘT DỮ LIỆU */}
                           <TableCell sx={{ fontSize: '0.85rem', fontWeight: 600, color: '#0284c7' }}><span style={{ textDecoration: isCancelled ? 'line-through' : 'none' }}>{row.code || `PN${row.id}`}</span></TableCell>
                           <TableCell sx={{ fontSize: '0.85rem' }}>{row.importDate ? new Date(row.importDate).toLocaleDateString('vi-VN') : '-'}</TableCell>
                           <TableCell sx={{ fontSize: '0.85rem', fontWeight: 600 }}>{row.supplierName || 'NCC Vãng lai'}</TableCell>
                           <TableCell sx={{ fontSize: '0.85rem', fontWeight: 700 }}>{formatCurrency(row.totalAmount || 0)}</TableCell>
                           <TableCell sx={{ fontSize: '0.85rem', color: '#16a34a', fontWeight: 600 }}>{formatCurrency(row.paidAmount || 0)}</TableCell>
                           <TableCell sx={{ fontSize: '0.85rem', color: (row.debtAmount || 0) > 0 ? '#dc2626' : '#475569', fontWeight: (row.debtAmount || 0) > 0 ? 700 : 500 }}>{formatCurrency(row.debtAmount || 0)}</TableCell>
-                          
-                          {/* 🟢 CỘT NGƯỜI LẬP: Lấy user hiện tại nếu Backend trống */}
                           <TableCell sx={{ fontSize: '0.85rem' }}>
                             {row.createdByName || row.creatorName || row.employeeName || user?.fullName || 'System Admin'}
                           </TableCell>
-                          
                           <TableCell>{renderStatusChip(row.status)}</TableCell>
                         </TableRow>
                       );
@@ -352,6 +368,42 @@ export const ImportInventoryPage: React.FC = () => {
         </Card>
       </Box>
 
+      {/* BẢNG PHỤ THANH TOÁN ĐÍCH DANH PHIẾU */}
+      <Dialog open={payTicketDialog.open} onClose={() => setPayTicketDialog({open: false, ticket: null})} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#00a65a', color: 'white', fontWeight: 700 }}>THANH TOÁN PHIẾU</DialogTitle>
+        <DialogContent sx={{ pt: 3 }}>
+           <Typography mb={1} variant="body1">Thanh toán cho phiếu: <b>{payTicketDialog.ticket?.code}</b></Typography>
+           <Typography mb={3} variant="body1">Công nợ cần trả: <b style={{color: '#dc2626'}}>{formatCurrency(payTicketDialog.ticket?.debtAmount)}</b></Typography>
+           
+           <TextField
+              fullWidth label="Nhập số tiền muốn trả" type="number" size="small"
+              value={ticketPayAmount} onChange={e => setTicketPayAmount(Number(e.target.value))}
+              InputProps={{ endAdornment: <InputAdornment position="end">đ</InputAdornment> }}
+              sx={{ mb: 2 }}
+           />
+
+           {/* 🟢 COMPONENT CHỌN PHƯƠNG THỨC THANH TOÁN */}
+           <FormControl fullWidth size="small" sx={{ mb: 1 }}>
+              <InputLabel>Phương thức thanh toán</InputLabel>
+              <Select
+                value={ticketPayMethod}
+                label="Phương thức thanh toán"
+                onChange={e => setTicketPayMethod(e.target.value)}
+              >
+                <MenuItem value="CASH">Tiền mặt</MenuItem>
+                <MenuItem value="BANK">Chuyển khoản</MenuItem>
+              </Select>
+           </FormControl>
+
+        </DialogContent>
+        <DialogActions sx={{ p: 2, bgcolor: '#f1f5f9' }}>
+           <Button onClick={() => setPayTicketDialog({open: false, ticket: null})} color="inherit">Hủy</Button>
+           <Button variant="contained" color="success" onClick={handleConfirmPayTicket} disabled={loading}>
+              {loading ? 'Đang xử lý...' : 'Xác nhận trả tiền'}
+           </Button>
+        </DialogActions>
+      </Dialog>
+
       {/* DIALOG LẬP PHIẾU NHẬP */}
       <Dialog open={openAddDialog} onClose={() => setOpenAddDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle sx={{ bgcolor: '#00a65a', color: 'white', fontWeight: 700, display: 'flex', justifyContent: 'space-between' }}>
@@ -359,29 +411,32 @@ export const ImportInventoryPage: React.FC = () => {
         </DialogTitle>
         <DialogContent sx={{ pt: 3, bgcolor: '#f1f5f9' }}>
           <Grid container spacing={2}>
-            {/* THÔNG TIN NCC */}
             <Grid item xs={12}>
               <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                 <Grid container spacing={2}>
-                  <Grid item xs={6}>
-                    <Stack direction="row" spacing={1}>
-                      <FormControl fullWidth size="small">
-                        <InputLabel>Nhà cung cấp *</InputLabel>
-                        <Select label="Nhà cung cấp *" value={addFormData.supplierId} onChange={(e) => setAddFormData({ ...addFormData, supplierId: e.target.value })}>
-                          {suppliers.map(s => <MenuItem key={s.id} value={s.id.toString()}>{s.name} - ({s.phone})</MenuItem>)}
-                        </Select>
-                      </FormControl>
-                      <IconButton sx={{ color: '#f39c12' }}><PersonAddIcon /></IconButton>
-                    </Stack>
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Nhà cung cấp *</InputLabel>
+                      <Select label="Nhà cung cấp *" value={addFormData.supplierId} onChange={(e) => setAddFormData({ ...addFormData, supplierId: e.target.value })}>
+                        {suppliers.map(s => <MenuItem key={s.id} value={s.id.toString()}>{s.name} - ({s.phone})</MenuItem>)}
+                      </Select>
+                    </FormControl>
                   </Grid>
-                  <Grid item xs={6}>
+                  <Grid item xs={12} md={4}>
+                    <FormControl fullWidth size="small">
+                      <InputLabel>Cửa hàng nhập *</InputLabel>
+                      <Select label="Cửa hàng nhập *" value={addFormData.storeId} onChange={(e) => setAddFormData({ ...addFormData, storeId: e.target.value })}>
+                        {stores.map(s => <MenuItem key={s.id} value={s.id.toString()}>{s.name}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                  </Grid>
+                  <Grid item xs={12} md={4}>
                     <TextField fullWidth size="small" type="date" label="Ngày nhập *" value={addFormData.importDate} onChange={(e) => setAddFormData({ ...addFormData, importDate: e.target.value })} InputLabelProps={{ shrink: true }} />
                   </Grid>
                 </Grid>
               </Card>
             </Grid>
 
-            {/* TÌM KIẾM VÀ CHỌN SẢN PHẨM */}
             <Grid item xs={12}>
               <Card variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
                 <Stack direction="row" spacing={1} sx={{ mb: 2 }}><BusinessIcon color="primary" /><Typography fontWeight={600}>Chi tiết sản phẩm nhập</Typography></Stack>
@@ -389,7 +444,7 @@ export const ImportInventoryPage: React.FC = () => {
                   <TextField fullWidth size="small" placeholder="🔍 Gõ tên hoặc mã SKU sản phẩm để thêm..." value={productSearchKey} onChange={(e) => setProductSearchKey(e.target.value)} />
                   {filteredProducts.length > 0 && (
                     <Paper sx={{ position: 'absolute', top: '100%', left: 0, width: '100%', zIndex: 10, maxHeight: 250, overflow: 'auto', mt: 0.5, boxShadow: 3 }}>
-                      <List size="small">
+                      <List dense>
                         {filteredProducts.map(p => (
                           <ListItemButton key={p.id} onClick={() => handleAddProductToTicket(p)}>
                             <ListItemText 
@@ -403,7 +458,6 @@ export const ImportInventoryPage: React.FC = () => {
                   )}
                 </Box>
 
-                {/* BẢNG SẢN PHẨM CHỌN */}
                 <TableContainer sx={{ border: '1px solid #eee', maxHeight: 300 }}>
                   <Table size="small" stickyHeader>
                     <TableHead>
@@ -435,7 +489,6 @@ export const ImportInventoryPage: React.FC = () => {
               </Card>
             </Grid>
 
-            {/* TỔNG TIỀN VÀ THANH TOÁN */}
             <Grid item xs={12}>
               <Grid container spacing={2}>
                 <Grid item xs={7}><Card sx={{ p: 2, height: '100%' }}><TextField fullWidth multiline rows={3} label="Ghi chú" /></Card></Grid>
@@ -443,9 +496,26 @@ export const ImportInventoryPage: React.FC = () => {
                   <Card sx={{ p: 2 }}>
                     <Stack spacing={1.5}>
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography>Tổng tiền:</Typography><Typography variant="h6" color="primary" fontWeight={700}>{formatCurrency(calculatedAmounts.totalAmount)}</Typography></Box>
-                      <Divider dashed />
+                      <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
+                      
                       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><Typography color="success.main">Đã thanh toán:</Typography><TextField type="number" size="small" value={addFormData.paidAmount} onChange={(e) => setAddFormData({...addFormData, paidAmount: Math.max(0, parseInt(e.target.value)||0)})} sx={{ width: 150 }} /></Box>
-                      <Divider dashed />
+                      
+                      {/* 🟢 COMPONENT CHỌN PHƯƠNG THỨC TT CHO FORM LẬP MỚI (chỉ hiện khi có nhập tiền) */}
+                      {addFormData.paidAmount > 0 && (
+                        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', mt: 0.5 }}>
+                          <Select
+                            size="small"
+                            value={addFormData.paymentMethod}
+                            onChange={(e) => setAddFormData({...addFormData, paymentMethod: e.target.value})}
+                            sx={{ width: 150, height: 32, fontSize: '0.85rem' }}
+                          >
+                            <MenuItem value="CASH">Bằng Tiền mặt</MenuItem>
+                            <MenuItem value="BANK">Bằng Chuyển khoản</MenuItem>
+                          </Select>
+                        </Box>
+                      )}
+
+                      <Divider sx={{ borderStyle: 'dashed', my: 1 }} />
                       <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography color="error.main">Ghi nợ:</Typography><Typography variant="h6" color="error.main" fontWeight={700}>{formatCurrency(calculatedAmounts.debtAmount)}</Typography></Box>
                     </Stack>
                   </Card>
@@ -481,47 +551,6 @@ export const ImportInventoryPage: React.FC = () => {
            )}
         </DialogContent>
         <DialogActions sx={{ p: 2 }}><Button onClick={() => setOpenDetail(false)}>Đóng</Button></DialogActions>
-      </Dialog>
-
-      {/* 🟢 DIALOG KHÓA PHIẾU SIÊU ĐẸP */}
-      <Dialog open={lockConfirm.open} onClose={() => setLockConfirm({...lockConfirm, open: false})} PaperProps={{ sx: { borderRadius: 3, p: 1, width: 400 } }}>
-        <DialogContent sx={{ textAlign: 'center', pt: 4 }}>
-          <Box sx={{ bgcolor: '#fff4e5', width: 70, height: 70, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', mb: 2 }}>
-            <LockIcon sx={{ fontSize: 40, color: '#f39c12' }} />
-          </Box>
-          <Typography variant="h6" fontWeight={700}>Chốt phiếu nhập kho?</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Bạn muốn chốt phiếu <b style={{ color: '#0284c7' }}>{lockConfirm.code}</b>? <br/> Dữ liệu sẽ được <b>ghi vào kho</b> và không thể sửa đổi hay hủy sau khi chốt.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 4, gap: 2 }}>
-          <Button variant="outlined" color="inherit" onClick={() => setLockConfirm({...lockConfirm, open: false})} sx={{ borderRadius: 2, px: 3, fontWeight: 600 }}>Bỏ qua</Button>
-          <Button variant="contained" onClick={confirmLockAction} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#e67e22' }, borderRadius: 2, px: 3, fontWeight: 600 }}>Xác nhận chốt</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* 🟢 DIALOG HỦY PHIẾU SIÊU ĐẸP */}
-      <Dialog open={cancelConfirm.open} onClose={() => setCancelConfirm({ ...cancelConfirm, open: false })} PaperProps={{ sx: { borderRadius: 3, p: 1, width: 400 } }}>
-        <DialogContent sx={{ textAlign: 'center', pt: 4 }}>
-          <Box sx={{ bgcolor: '#fef2f2', width: 70, height: 70, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto', mb: 2 }}>
-            <CloseIcon sx={{ fontSize: 40, color: '#dc2626' }} />
-          </Box>
-          <Typography variant="h6" fontWeight={700}>Xác nhận hủy phiếu?</Typography>
-          <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
-            Bạn có chắc chắn muốn hủy phiếu <b style={{ color: '#0284c7' }}>{cancelConfirm.code}</b>? <br/> Hành động này sẽ <b>hoàn lại tồn kho</b> và không thể hoàn tác.
-          </Typography>
-        </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 4, gap: 2 }}>
-          <Button variant="outlined" color="inherit" onClick={() => setCancelConfirm({ open: false, id: null, code: '' })} sx={{ borderRadius: 2, px: 3, fontWeight: 600 }}>Hủy bỏ</Button>
-          <Button variant="contained" onClick={confirmCancelAction} sx={{ bgcolor: '#dc2626', '&:hover': { bgcolor: '#b91c1c' }, borderRadius: 2, px: 3, fontWeight: 600 }}>Xác nhận hủy</Button>
-        </DialogActions>
-      </Dialog>
-
-      {/* DIALOG THANH TOÁN */}
-      <Dialog open={openPaymentDialog} onClose={() => setOpenPaymentDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ bgcolor: '#f39c12', color: 'white' }}>THANH TOÁN CÔNG NỢ NHÀ CUNG CẤP</DialogTitle>
-        <DialogContent sx={{ pt: 3 }}><Typography>Chức năng đang phát triển. Vui lòng vào module Tài Chính - Thu/Chi.</Typography></DialogContent>
-        <DialogActions sx={{ p: 2 }}><Button onClick={() => setOpenPaymentDialog(false)} variant="contained" color="primary">Đã hiểu</Button></DialogActions>
       </Dialog>
     </Box>
   );

@@ -3,19 +3,21 @@ import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Button, IconButton, TextField,
   Dialog, DialogTitle, DialogContent, DialogActions, MenuItem,
-  FormControl, InputLabel, Select, Chip, CircularProgress, Avatar, Pagination
+  FormControl, InputLabel, Select, Chip, CircularProgress, Avatar
 } from '@mui/material';
 import {
-  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
-  Print as PrintIcon, FileDownload as ExcelIcon,
+  Add as AddIcon, Edit as EditIcon,
   Block as BlockIcon, CheckCircle as ActiveIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-import { userAPI, storeAPI } from '../../api/client'; 
+import apiClient, { userAPI, storeAPI } from '../../api/client'; 
 
 const ROLE_MAP: Record<string, { label: string; color: string; bg: string }> = {
-  'ROLE_MANAGER': { label: 'Quản Lý', color: '#b45309', bg: '#fef3c7' },
-  'ROLE_STAFF': { label: 'Thu Ngân', color: '#0369a1', bg: '#e0f2fe' },
+  'ADMIN': { label: 'Quản trị viên', color: '#1e293b', bg: '#f1f5f9' },
+  'MANAGER': { label: 'Quản lý cửa hàng', color: '#b45309', bg: '#fef3c7' },
+  'CASHIER': { label: 'Thu ngân', color: '#0369a1', bg: '#e0f2fe' },
+  'WAREHOUSE_STAFF': { label: 'Nhân viên kho', color: '#15803d', bg: '#dcfce7' },
+  'SALES_STAFF': { label: 'Nhân viên bán hàng', color: '#7e22ce', bg: '#f3e8ff' },
 };
 
 export const EmployeesPage: React.FC = () => {
@@ -33,7 +35,7 @@ export const EmployeesPage: React.FC = () => {
 
   const [formData, setFormData] = useState({
     email: '', password: '', fullName: '', phone: '', 
-    role: 'ROLE_STAFF', storeId: '' as string | number, isActive: true,
+    role: 'CASHIER', storeId: '' as string | number, isActive: true,
   });
 
   const loadData = async () => {
@@ -43,7 +45,9 @@ export const EmployeesPage: React.FC = () => {
       const listUsers = (usersRes.data as any)?.data || usersRes.data || [];
       const listStores = (storesRes.data as any)?.data || storesRes.data || [];
       
-      setEmployees(listUsers.filter((u: any) => u.role === 'ROLE_MANAGER' || u.role === 'ROLE_STAFF'));
+      setEmployees(listUsers.filter((u: any) => 
+        ['ADMIN', 'MANAGER', 'CASHIER', 'WAREHOUSE_STAFF', 'SALES_STAFF'].includes(u.role)
+      ));
       setStores(listStores);
     } catch (err: any) {
       showToast('Lỗi khi tải dữ liệu nhân viên', 'error');
@@ -66,13 +70,13 @@ export const EmployeesPage: React.FC = () => {
         password: '', 
         fullName: employee.fullName, 
         phone: employee.phone || '', 
-        role: employee.role || 'ROLE_STAFF', 
+        role: employee.role || 'CASHIER',
         storeId: employee.storeId || '', 
         isActive: employee.isActive ?? true,
       });
     } else {
       setEditingEmployee(null);
-      setFormData({ email: '', password: '', fullName: '', phone: '', role: 'ROLE_STAFF', storeId: '', isActive: true });
+      setFormData({ email: '', password: '', fullName: '', phone: '', role: 'CASHIER', storeId: '', isActive: true });
     }
     setOpenDialog(true);
   };
@@ -85,7 +89,7 @@ export const EmployeesPage: React.FC = () => {
       const payload = { 
         ...formData, 
         storeId: formData.storeId ? Number(formData.storeId) : null,
-        phone: formData.phone.trim() || null // Tránh gửi chuỗi rỗng gây lỗi Regex
+        phone: formData.phone.trim() || null 
       };
 
       if (editingEmployee) {
@@ -105,7 +109,6 @@ export const EmployeesPage: React.FC = () => {
 
   const handleToggleStatus = async (id: number) => {
     try {
-      // Gọi đúng API toggle-status đã viết ở Controller
       await apiClient.patch(`/api/core/employees/${id}/toggle-status`);
       showToast('Đã thay đổi trạng thái nhân viên', 'success');
       loadData();
@@ -136,11 +139,14 @@ export const EmployeesPage: React.FC = () => {
               value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
               sx={{ width: 250, bgcolor: 'white' }} 
             />
-            <FormControl size="small" sx={{ width: 150 }}>
+            <FormControl size="small" sx={{ width: 180 }}>
               <Select value={roleFilter} onChange={(e) => setRoleFilter(e.target.value)}>
                 <MenuItem value="ALL">Tất cả chức vụ</MenuItem>
-                <MenuItem value="ROLE_MANAGER">Quản lý</MenuItem>
-                <MenuItem value="ROLE_STAFF">Thu ngân</MenuItem>
+                <MenuItem value="ADMIN">Quản trị viên</MenuItem>
+                <MenuItem value="MANAGER">Quản lý cửa hàng</MenuItem>
+                <MenuItem value="CASHIER">Thu ngân</MenuItem>
+                <MenuItem value="WAREHOUSE_STAFF">Nhân viên kho</MenuItem>
+                <MenuItem value="SALES_STAFF">Nhân viên bán hàng</MenuItem>
               </Select>
             </FormControl>
           </Box>
@@ -173,10 +179,10 @@ export const EmployeesPage: React.FC = () => {
                           <Typography variant="body2" fontWeight={600}>{emp.fullName}</Typography>
                         </Box>
                       </TableCell>
-                      <TableCell variant="body2">{emp.email}</TableCell>
+                      <TableCell>{emp.email}</TableCell>
                       <TableCell><Chip label={roleInfo.label} size="small" sx={{ bgcolor: roleInfo.bg, color: roleInfo.color, fontWeight: 700 }} /></TableCell>
-                      <TableCell variant="body2">{storeMap[emp.storeId!] || '---'}</TableCell>
-                      <TableCell variant="body2">{emp.phone || '---'}</TableCell>
+                      <TableCell>{storeMap[emp.storeId!] || '---'}</TableCell>
+                      <TableCell>{emp.phone || '---'}</TableCell>
                       <TableCell>
                         <Chip 
                           label={emp.isActive ? 'Đang làm' : 'Đã nghỉ'} 
@@ -225,8 +231,11 @@ export const EmployeesPage: React.FC = () => {
              <FormControl size="small">
                 <InputLabel>Chức vụ</InputLabel>
                 <Select label="Chức vụ" value={formData.role} onChange={(e) => setFormData({...formData, role: e.target.value})}>
-                    <MenuItem value="ROLE_MANAGER">Quản lý</MenuItem>
-                    <MenuItem value="ROLE_STAFF">Thu ngân</MenuItem>
+                    <MenuItem value="ADMIN">Quản trị viên</MenuItem>
+                    <MenuItem value="MANAGER">Quản lý cửa hàng</MenuItem>
+                    <MenuItem value="CASHIER">Thu ngân</MenuItem>
+                    <MenuItem value="WAREHOUSE_STAFF">Nhân viên kho</MenuItem>
+                    <MenuItem value="SALES_STAFF">Nhân viên bán hàng</MenuItem>
                 </Select>
              </FormControl>
              <FormControl size="small">
