@@ -1,21 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip, Dialog, DialogTitle, DialogContent, DialogActions, 
+  TableContainer, TableHead, TableRow, TextField, Button,
+  Chip, Dialog, DialogTitle, DialogContent, DialogActions, 
   Grid, Paper, IconButton, CircularProgress, Stack, Divider
 } from '@mui/material';
 import {
   Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
-  FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  Visibility as ViewIcon, AssignmentReturn as ReturnIcon,
+  FilterAlt as FilterIcon, Visibility as ViewIcon,
   Refresh as RefreshIcon, Storefront as StoreIcon
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
-
-// 👉 IMPORT API VÀ TOAST
 import { orderAPI } from '../../api/client';
 import { useToastStore } from '../../store/toastStore';
+import dayjs from 'dayjs';
 
 export const RetailOrdersPage: React.FC = () => {
   const navigate = useNavigate();
@@ -30,6 +28,12 @@ export const RetailOrdersPage: React.FC = () => {
   const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
   const mapBackendToOrder = (hd: any): any => {
+    const total = Number(hd.totalAmount ?? 0);
+    
+    // 🟢 ĐÂY LÀ ĐIỂM CHỐT LỜI: Quét tất cả các biến có khả năng chứa 200k
+    // Ưu tiên paidAmount trước, nếu không có mới sang receivedAmount
+    const received = Number(hd.paidAmount || hd.receivedAmount || hd.amountPaid || total);
+    
     return {
       ...hd,
       id: hd.id || hd.hoaDonId,
@@ -41,20 +45,18 @@ export const RetailOrdersPage: React.FC = () => {
       storeName: hd.storeName || 'Chi nhánh Hà Nội',
       subtotal: Number(hd.subTotal ?? 0),
       discount: Number(hd.discount ?? 0),
-      total: Number(hd.totalAmount ?? 0),
+      total: total,
+      receivedAmount: received, // Gán vào biến nội bộ của giao diện
+      changeAmount: Math.max(0, received - total),
       status: hd.status || 'COMPLETED',
       items: hd.items || [] 
     };
   };
-
+  
   const loadOrders = async (silent = false) => {
     try {
       if (!silent) setLoading(true);
-      
-      // Gọi API lọc riêng đơn RETAIL đã COMPLETED
       const res = await orderAPI.query({ channel: 'RETAIL', status: 'COMPLETED' });
-      
-      // 🟢 FIX LỖI Ở ĐÂY: Khai báo và bóc tách dataFromApi từ res
       const dataFromApi = res.data?.data || res.data || [];
       
       if (Array.isArray(dataFromApi)) {
@@ -96,25 +98,14 @@ export const RetailOrdersPage: React.FC = () => {
       {/* HEADER */}
       <Box sx={{ mb: 3, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box>
-            <Typography variant="h5" sx={{ fontWeight: 800, color: '#1e293b', letterSpacing: -0.5 }}>
+            <Typography variant="h5" sx={{ fontWeight: 800, color: '#1e293b' }}>
               QUẢN LÝ ĐƠN BÁN LẺ
             </Typography>
-            <Typography variant="body2" color="text.secondary">Xem và quản lý tất cả hóa đơn bán hàng tại quầy</Typography>
+            <Typography variant="body2" color="text.secondary">Quản lý dòng tiền thực tế từ khách hàng</Typography>
         </Box>
         <Stack direction="row" spacing={1.5}>
-            <Button 
-                variant="outlined" startIcon={<RefreshIcon />} onClick={() => loadOrders()} 
-                sx={{ borderRadius: 2, textTransform: 'none', bgcolor: '#fff' }}
-            >
-                Làm mới
-            </Button>
-            <Button 
-                variant="contained" color="success" startIcon={<AddIcon />} 
-                onClick={() => navigate('/pos')} 
-                sx={{ borderRadius: 2, textTransform: 'none', px: 3, fontWeight: 700 }}
-            >
-                Bán Hàng (POS)
-            </Button>
+            <Button variant="outlined" startIcon={<RefreshIcon />} onClick={() => loadOrders()} sx={{ borderRadius: 2, bgcolor: '#fff' }}>Làm mới</Button>
+            <Button variant="contained" color="success" startIcon={<AddIcon />} onClick={() => navigate('/pos')} sx={{ borderRadius: 2, fontWeight: 700 }}>Bán Hàng (POS)</Button>
         </Stack>
       </Box>
 
@@ -123,7 +114,7 @@ export const RetailOrdersPage: React.FC = () => {
         <CardContent sx={{ p: 2 }}>
           <TextField 
             fullWidth
-            placeholder="Tìm kiếm theo mã hóa đơn, tên khách hàng hoặc số điện thoại..." 
+            placeholder="Tìm kiếm mã hóa đơn, khách hàng..." 
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             InputProps={{ startAdornment: <FilterIcon sx={{ mr: 1, color: 'text.disabled' }} /> }}
             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2, bgcolor: '#fff' } }}
@@ -148,32 +139,40 @@ export const RetailOrdersPage: React.FC = () => {
           </TableHead>
           <TableBody sx={{ bgcolor: '#fff' }}>
             {loading ? (
-              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 10 }}><CircularProgress size={40} /><Typography sx={{ mt: 2 }} color="text.secondary">Đang tải danh sách đơn hàng...</Typography></TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 10 }}><CircularProgress size={40} /></TableCell></TableRow>
             ) : filtered.length === 0 ? (
-              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 10, color: 'text.secondary' }}>Chưa có hóa đơn nào phù hợp.</TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 10 }}>Chưa có hóa đơn nào.</TableCell></TableRow>
             ) : (
               filtered.map((row) => (
-                <TableRow key={row.id} hover sx={{ transition: '0.2s' }}>
+                <TableRow key={row.id} hover>
                   <TableCell>
-                    <IconButton size="small" sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe', '&:hover': { bgcolor: '#bae6fd' } }} onClick={() => handleViewDetail(row)}>
+                    <IconButton size="small" sx={{ color: '#0ea5e9', bgcolor: '#e0f2fe' }} onClick={() => handleViewDetail(row)}>
                         <ViewIcon fontSize="small" />
                     </IconButton>
                   </TableCell>
-                  <TableCell sx={{ fontWeight: 800, color: '#1e293b' }}>{row.orderNumber}</TableCell>
-                  <TableCell sx={{ color: 'text.secondary', fontSize: '0.85rem' }}>{new Date(row.createdAt).toLocaleString('vi-VN')}</TableCell>
+                  <TableCell sx={{ fontWeight: 800 }}>{row.orderNumber}</TableCell>
+                  <TableCell sx={{ fontSize: '0.85rem' }}>{dayjs(row.createdAt).format('HH:mm DD/MM/YYYY')}</TableCell>
                   <TableCell>
                     <Typography variant="body2" fontWeight={700}>{row.customerName}</Typography>
                     <Typography variant="caption" color="text.secondary">{row.customerPhone}</Typography>
                   </TableCell>
-                  <TableCell align="right" sx={{ color: 'text.secondary' }}>{formatCurrency(row.subtotal)}</TableCell>
-                  <TableCell align="right" sx={{ fontWeight: 800, color: '#dc2626' }}>{formatCurrency(row.total)}</TableCell>
-                  <TableCell>
-                    <Stack direction="row" spacing={1} alignItems="center">
-                        <Typography variant="body2">{row.staffName}</Typography>
-                    </Stack>
+                  <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(row.total)}</TableCell>
+                  
+                  {/* 🟢 HIỂN THỊ TIỀN KHÁCH ĐƯA VÀ THỐI LẠI */}
+                  <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#dc2626' }}>
+                      {formatCurrency(row.receivedAmount)}
+                    </Typography>
+                    {row.changeAmount > 0 && (
+                      <Typography variant="caption" sx={{ color: '#16a34a', display: 'block', fontStyle: 'italic' }}>
+                        (Thối: {formatCurrency(row.changeAmount)})
+                      </Typography>
+                    )}
                   </TableCell>
+
+                  <TableCell>{row.staffName}</TableCell>
                   <TableCell align="center">
-                    <Chip label="Thành công" size="small" sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800, borderRadius: 1.5, fontSize: '0.7rem' }} />
+                    <Chip label="Thành công" size="small" sx={{ bgcolor: '#dcfce7', color: '#15803d', fontWeight: 800 }} />
                   </TableCell>
                 </TableRow>
               ))
@@ -189,40 +188,36 @@ export const RetailOrdersPage: React.FC = () => {
             <Typography variant="h6" fontWeight={800}>Chi tiết đơn hàng</Typography>
             <Typography variant="caption" color="primary" fontWeight={700}>{selectedOrder?.orderNumber}</Typography>
           </Box>
-          <IconButton onClick={() => setOpenDetail(false)} size="small"><DeleteIcon sx={{ transform: 'rotate(45deg)' }} /></IconButton>
+          <IconButton onClick={() => setOpenDetail(false)} size="small"><CloseIcon /></IconButton>
         </DialogTitle>
         
-        <DialogContent dividers sx={{ p: 0 }}>
+        <DialogContent dividers sx={{ p: 3 }}>
           {selectedOrder && (
-            <Box sx={{ p: 3 }}>
+            <>
               <Grid container spacing={2} sx={{ mb: 4 }}>
                 <Grid item xs={12} md={4}>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: '#fdfdfd' }}>
-                    <Typography variant="caption" color="text.secondary">THÔNG TIN KHÁCH HÀNG</Typography>
-                    <Typography variant="body1" fontWeight={700} sx={{ mt: 1 }}>{selectedOrder.customerName}</Typography>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">KHÁCH HÀNG</Typography>
+                    <Typography variant="body1" fontWeight={700}>{selectedOrder.customerName}</Typography>
                     <Typography variant="body2">{selectedOrder.customerPhone}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: '#fdfdfd' }}>
-                    <Typography variant="caption" color="text.secondary">NHÂN VIÊN & CỬA HÀNG</Typography>
-                    <Typography variant="body1" fontWeight={700} sx={{ mt: 1 }}>{selectedOrder.staffName}</Typography>
-                    <Typography variant="body2" sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}><StoreIcon fontSize="inherit" /> {selectedOrder.storeName}</Typography>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">NHÂN VIÊN</Typography>
+                    <Typography variant="body1" fontWeight={700}>{selectedOrder.staffName}</Typography>
+                    <Typography variant="body2">{selectedOrder.storeName}</Typography>
                   </Paper>
                 </Grid>
                 <Grid item xs={12} md={4}>
-                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2, bgcolor: '#fdfdfd' }}>
-                    <Typography variant="caption" color="text.secondary">THỜI GIAN GIAO DỊCH</Typography>
-                    <Typography variant="body1" fontWeight={700} sx={{ mt: 1 }}>{new Date(selectedOrder.createdAt).toLocaleString('vi-VN')}</Typography>
-                    <Typography variant="body2" color="success.main" fontWeight={700}>Trạng thái: Hoàn thành</Typography>
+                  <Paper variant="outlined" sx={{ p: 2, borderRadius: 2 }}>
+                    <Typography variant="caption" color="text.secondary">THANH TOÁN</Typography>
+                    <Typography variant="body1" fontWeight={700} color="error.main">{formatCurrency(selectedOrder.receivedAmount)}</Typography>
+                    <Typography variant="body2" color="success.main">Thối lại: {formatCurrency(selectedOrder.changeAmount)}</Typography>
                   </Paper>
                 </Grid>
               </Grid>
 
-              <Typography variant="subtitle2" fontWeight={800} mb={2} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <StoreIcon sx={{ fontSize: 20 }} /> DANH SÁCH MÓN HÀNG
-              </Typography>
-              
               <TableContainer component={Paper} variant="outlined" sx={{ borderRadius: 2 }}>
                 <Table size="small">
                   <TableHead sx={{ bgcolor: '#f8fafc' }}>
@@ -234,51 +229,57 @@ export const RetailOrdersPage: React.FC = () => {
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {selectedOrder.items && selectedOrder.items.length > 0 ? (
-                      selectedOrder.items.map((item: any, idx: number) => (
-                        <TableRow key={idx}>
-                          <TableCell>
-                              <Typography variant="body2" fontWeight={700}>{item.productName}</Typography>
-                              <Typography variant="caption" color="text.secondary">{item.variantName}</Typography>
-                          </TableCell>
-                          <TableCell align="center">{item.quantity}</TableCell>
-                          <TableCell align="right">{formatCurrency(item.unitPrice)}</TableCell>
-                          <TableCell align="right" sx={{ fontWeight: 800 }}>{formatCurrency(item.unitPrice * item.quantity)}</TableCell>
-                        </TableRow>
-                      ))
-                    ) : (
-                      <TableRow><TableCell colSpan={4} align="center" sx={{ py: 3 }}>Không có dữ liệu chi tiết.</TableCell></TableRow>
-                    )}
+                    {selectedOrder.items?.map((item: any, idx: number) => (
+                      <TableRow key={idx}>
+                        <TableCell>
+                            <Typography variant="body2" fontWeight={700}>{item.productName}</Typography>
+                            <Typography variant="caption" color="text.secondary">{item.variantName}</Typography>
+                        </TableCell>
+                        <TableCell align="center">{item.quantity}</TableCell>
+                        <TableCell align="right">{formatCurrency(item.unitPrice)}</TableCell>
+                        <TableCell align="right" sx={{ fontWeight: 800 }}>{formatCurrency(item.unitPrice * item.quantity)}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </TableContainer>
 
-              <Box sx={{ mt: 4, display: 'flex', justifyContent: 'flex-end' }}>
-                <Stack spacing={1.5} sx={{ width: 320, p: 2, bgcolor: '#f8fafc', borderRadius: 3 }}>
+              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+                <Stack spacing={1} sx={{ width: 280, p: 2, bgcolor: '#f8fafc', borderRadius: 2 }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="text.secondary">Tiền hàng:</Typography>
-                        <Typography variant="body2" fontWeight={600}>{formatCurrency(selectedOrder.subtotal)}</Typography>
+                        <Typography variant="body2">Tổng tiền hàng:</Typography>
+                        <Typography variant="body2">{formatCurrency(selectedOrder.subtotal)}</Typography>
                     </Box>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="body2" color="text.secondary">Giảm giá:</Typography>
-                        <Typography variant="body2" color="error.main" fontWeight={600}>-{formatCurrency(selectedOrder.discount)}</Typography>
+                        <Typography variant="body2">Giảm giá:</Typography>
+                        <Typography variant="body2" color="error">-{formatCurrency(selectedOrder.discount)}</Typography>
                     </Box>
                     <Divider />
                     <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                        <Typography variant="h6" fontWeight={900}>TỔNG CỘNG:</Typography>
-                        <Typography variant="h6" fontWeight={900} color="#16a34a">{formatCurrency(selectedOrder.total)}</Typography>
+                        <Typography variant="subtitle1" fontWeight={900}>PHẢI THANH TOÁN:</Typography>
+                        <Typography variant="subtitle1" fontWeight={900} color="primary.main">{formatCurrency(selectedOrder.total)}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
+                        <Typography variant="body2" fontWeight={700}>Khách đã đưa:</Typography>
+                        <Typography variant="body2" fontWeight={700} color="error.main">{formatCurrency(selectedOrder.receivedAmount)}</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <Typography variant="body2">Tiền thối lại:</Typography>
+                        <Typography variant="body2" color="success.main" fontWeight={700}>{formatCurrency(selectedOrder.changeAmount)}</Typography>
                     </Box>
                 </Stack>
               </Box>
-            </Box>
+            </>
           )}
         </DialogContent>
-        
-        <DialogActions sx={{ p: 3, bgcolor: '#f8fafc' }}>
-          <Button onClick={() => setOpenDetail(false)} color="inherit" sx={{ fontWeight: 600 }}>Đóng</Button>
-          <Button variant="contained" startIcon={<PrintIcon />} onClick={() => window.print()} sx={{ borderRadius: 2, px: 4, fontWeight: 700 }}>In Hóa Đơn</Button>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setOpenDetail(false)}>Đóng</Button>
+          <Button variant="contained" startIcon={<PrintIcon />}>In lại hóa đơn</Button>
         </DialogActions>
       </Dialog>
     </Box>
   );
 };
+
+// Icon đóng giả lập
+const CloseIcon = () => <Typography sx={{ cursor: 'pointer', fontWeight: 900 }}>X</Typography>;

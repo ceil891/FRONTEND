@@ -57,21 +57,27 @@ apiClient.interceptors.response.use(
 
     if (status === 401) {
       clearAuth();
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login';
-      }
+      if (typeof window !== 'undefined') window.location.href = '/login';
     }
 
-    const message =
-      (error.response?.data as any)?.message ??
-      error.message ??
-      'Có lỗi xảy ra. Vui lòng thử lại.';
+    // 🟢 BÓC TÁCH MESSAGE SIÊU CẤP
+    // Spring Boot thường trả về lỗi trong error.response.data
+    // Nó có thể là một Object {message: "..."} hoặc chỉ là một chuỗi String đơn thuần
+    const data = error.response?.data;
+    let finalMessage = "";
 
-    return Promise.reject(
-      Object.assign(error, {
-        message,
-      })
-    );
+    if (typeof data === 'string') {
+        finalMessage = data; // Nếu Backend trả về chuỗi thuần túy
+    } else if (data && data.message) {
+        finalMessage = data.message; // Nếu Backend trả về JSON có field message
+    } else {
+        finalMessage = error.message || "Lỗi hệ thống";
+    }
+
+    // 🟢 QUAN TRỌNG: Gán lại vào error.message để Page chỉ cần gọi error.message là xong
+    error.message = finalMessage;
+
+    return Promise.reject(error);
   }
 );
 

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
   Grid, Card, TextField, Button, Typography, Box, IconButton, InputAdornment,
-  CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Stack, Divider, Select, MenuItem
+  CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Stack, Divider, Select, MenuItem, ListItemButton, ListItemText
 } from '@mui/material';
 import {
   Delete as DeleteIcon, Search as SearchIcon,
@@ -16,7 +16,7 @@ export const POSPage: React.FC = () => {
   const [stores, setStores] = useState<any[]>([]);
   const [selectedStore, setSelectedStore] = useState<any>(null);
   const [products, setProducts] = useState<any[]>([]);
-  const [promotions, setPromotions] = useState<any[]>([]); // 🟢 Khôi phục danh sách KM
+  const [promotions, setPromotions] = useState<any[]>([]); 
   const [cart, setCart] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -24,7 +24,7 @@ export const POSPage: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState('');
   const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
   const [pointsToUse, setPointsToUse] = useState<number>(0);
-  const [appliedPromotion, setAppliedPromotion] = useState<any>(null); // 🟢 Mã KM đang chọn
+  const [appliedPromotion, setAppliedPromotion] = useState<any>(null); 
   
   const [customerCash, setCustomerCash] = useState<number | ''>('');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(PaymentMethod.CASH);
@@ -40,7 +40,7 @@ export const POSPage: React.FC = () => {
       const [sRes, pRes, promoRes] = await Promise.all([
         storeAPI.getAll(), 
         productAPI.getAll(),
-        promotionAPI.getAll() // 🟢 Load danh sách khuyến mãi
+        promotionAPI.getAll()
       ]);
       setStores(sRes.data?.data || []);
       setProducts((pRes.data || []).filter((p: any) => p.status === 'ACTIVE'));
@@ -49,9 +49,8 @@ export const POSPage: React.FC = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { void loadData(); }, []);
 
-  // 🟢 HÀM TÌM KHÁCH HÀNG
   const handleFindCustomer = async () => {
     if (!customerPhone) return;
     try {
@@ -65,11 +64,8 @@ export const POSPage: React.FC = () => {
     } catch (e) { showToast('Lỗi tra cứu', 'error'); }
   };
 
-  // 🟢 LOGIC TÍNH TIỀN (QUAN TRỌNG)
   const { subtotal, promoDiscount, pointDiscount, total } = useMemo(() => {
     const st = cart.reduce((sum, i) => sum + i.total, 0);
-    
-    // 1. Tính giảm giá từ Promotion
     let pd = 0;
     if (appliedPromotion && st >= (appliedPromotion.minPurchase || 0)) {
       if (appliedPromotion.discountType === 'PERCENTAGE') {
@@ -79,21 +75,13 @@ export const POSPage: React.FC = () => {
         pd = appliedPromotion.discountValue;
       }
     }
-
-    // 2. Tính giảm giá từ Điểm (1 điểm = 100đ)
     const pnd = (pointsToUse || 0) * 100;
-
-    return { 
-      subtotal: st, 
-      promoDiscount: pd, 
-      pointDiscount: pnd, 
-      total: Math.max(0, st - pd - pnd) 
-    };
+    return { subtotal: st, promoDiscount: pd, pointDiscount: pnd, total: Math.max(0, st - pd - pnd) };
   }, [cart, appliedPromotion, pointsToUse]);
 
   const addProduct = (p: any) => {
     const variant = p.variants?.[0];
-    if (!variant || variant.quantity <= 0) return showToast('Hết hàng!', 'error');
+    if (!variant || variant.quantity <= 0) return showToast('Sản phẩm này đã hết hàng!', 'error');
     const exist = cart.find(i => i.variantId === variant.id);
     if (exist) {
       setCart(cart.map(i => i.variantId === variant.id ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.unitPrice } : i));
@@ -103,25 +91,57 @@ export const POSPage: React.FC = () => {
   };
 
   const submitOrder = async () => {
+    if (!selectedStore) return showToast('Chưa chọn cửa hàng', 'error');
+    
+    if (paymentMethod === PaymentMethod.CASH && (!customerCash || Number(customerCash) < total)) {
+      return showToast('Số tiền khách đưa chưa đủ', 'warning');
+    }
+
     try {
       setLoading(true);
+      const cashGiven = paymentMethod === PaymentMethod.CASH ? Number(customerCash) : total;
+
       const payload = {
         orderType: 'RETAIL', 
         storeId: selectedStore.id,
         customerId: selectedCustomer?.id || null,
         promotionId: appliedPromotion?.id || null,
         paymentMethod: paymentMethod === PaymentMethod.CASH ? 'CASH' : 'BANK_TRANSFER',
-        amountPaid: paymentMethod === PaymentMethod.CASH ? Number(customerCash) : total,
-        usedPoints: pointsToUse, // 🟢 Gửi điểm tiêu lên cho Backend xử lý
-        discount: promoDiscount, // 🟢 Gửi tiền KM lên cho Backend xử lý
-        items: cart.map(i => ({ productVariantId: i.variantId, quantity: i.quantity }))
+        
+        // 🟢 BỦA VÂY BACKEND: Gửi tiền khách đưa vào cả 3 trường phổ biến nhất
+        paidAmount: cashGiven,      // Ưu tiên 1
+        receivedAmount: cashGiven,  // Ưu tiên 2
+        amountPaid: total,          // Để Backend chốt sổ quỹ
+
+        totalAmount: total, 
+        usedPoints: pointsToUse, 
+        discount: promoDiscount, 
+        items: cart.map(i => ({ 
+            productVariantId: i.variantId, 
+            quantity: i.quantity,
+            unitPrice: i.unitPrice 
+        }))
       };
+
       await orderAPI.create(payload as any);
+      
       showToast('Thanh toán thành công!', 'success');
-      setCart([]); setAppliedPromotion(null); setSelectedCustomer(null); setPointsToUse(0);
-      setOpenCashDialog(false); setOpenQRDialog(false); setCustomerCash('');
-    } catch (e:any) { showToast(e.response?.data?.message || 'Lỗi thanh toán', 'error'); }
-    finally { setLoading(false); }
+      
+      setCart([]); 
+      setAppliedPromotion(null); 
+      setSelectedCustomer(null); 
+      setPointsToUse(0);
+      setOpenCashDialog(false); 
+      setOpenQRDialog(false); 
+      setCustomerCash('');
+      setCustomerPhone('');
+
+    } catch (err: any) {
+      const errorMsg = err.message || 'Lỗi thanh toán không xác định';
+      showToast(errorMsg, 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatCurrency = (v: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(v || 0);
@@ -173,7 +193,6 @@ export const POSPage: React.FC = () => {
             </Box>
 
             <Box sx={{ p: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
-              {/* 🟢 KHÁCH HÀNG & TÍCH ĐIỂM */}
               {!selectedCustomer ? (
                 <Stack direction="row" spacing={1} mb={1.5}>
                   <TextField size="small" fullWidth placeholder="SĐT Khách hàng..." value={customerPhone} onChange={e => setCustomerPhone(e.target.value)} />
@@ -189,7 +208,6 @@ export const POSPage: React.FC = () => {
                 </Box>
               )}
 
-              {/* 🟢 KHUYẾN MÃI (PROMOTION) */}
               <Select fullWidth size="small" displayEmpty value={appliedPromotion?.id || ''} onChange={e => setAppliedPromotion(promotions.find(p => p.id === e.target.value))} sx={{ mb: 1.5, bgcolor: '#fff' }}>
                 <MenuItem value="">-- Áp dụng mã giảm giá --</MenuItem>
                 {promotions.map(p => (
@@ -217,33 +235,45 @@ export const POSPage: React.FC = () => {
                 <TextField fullWidth label="Tiền khách đưa" size="small" type="number" value={customerCash} onChange={e => setCustomerCash(Number(e.target.value))} sx={{ mb: 1.5, bgcolor: '#fff' }} />
               )}
 
-              <Button fullWidth variant="contained" color="success" size="large" sx={{ fontWeight: 900 }} onClick={() => paymentMethod === PaymentMethod.CASH ? setOpenCashDialog(true) : setOpenQRDialog(true)}>THANH TOÁN</Button>
+              <Button fullWidth variant="contained" color="success" size="large" sx={{ fontWeight: 900 }} disabled={loading} onClick={() => paymentMethod === PaymentMethod.CASH ? setOpenCashDialog(true) : setOpenQRDialog(true)}>
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'THANH TOÁN'}
+              </Button>
             </Box>
           </Card>
         </Grid>
       </Grid>
 
-      {/* DIALOG XÁC NHẬN (GIỮ NGUYÊN GIAO DIỆN ĐẸP) */}
-      <Dialog open={openCashDialog} onClose={() => setOpenCashDialog(false)} maxWidth="xs" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: 3 } }}>
+      <Dialog open={openCashDialog} onClose={() => !loading && setOpenCashDialog(false)} maxWidth="xs" fullWidth>
         <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold' }}>Xác Nhận Thanh Toán</DialogTitle>
         <DialogContent sx={{ p: 3 }}>
           <Stack spacing={2}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography color="text.secondary">Tổng hóa đơn:</Typography><Typography fontWeight={800}>{formatCurrency(total)}</Typography></Box>
-            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography color="text.secondary">Khách đưa:</Typography><Typography fontWeight={800}>{formatCurrency(Number(customerCash))}</Typography></Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between' }}><Typography color="text.secondary">Khách đưa:</Typography><Typography fontWeight={800} color="error.main">{formatCurrency(Number(customerCash))}</Typography></Box>
             <Divider sx={{ borderStyle: 'dashed' }} />
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', bgcolor: '#f0fdf4', p: 1.5, borderRadius: 2 }}><Typography fontWeight={700} color="#166534">Tiền thừa:</Typography><Typography fontWeight={900} color="#16a34a" fontSize="1.2rem">{formatCurrency(Number(customerCash) - total)}</Typography></Box>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', bgcolor: '#f0fdf4', p: 1.5, borderRadius: 2 }}>
+                <Typography fontWeight={700} color="#166534">Tiền thừa:</Typography>
+                <Typography fontWeight={900} color="#16a34a" fontSize="1.2rem">{formatCurrency(Number(customerCash) - total)}</Typography>
+            </Box>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ p: 2, justifyContent: 'center' }}><Button variant="contained" onClick={submitOrder} fullWidth sx={{ borderRadius: 2, py: 1.5 }}>Hoàn Tất</Button></DialogActions>
+        <DialogActions sx={{ p: 2 }}>
+          <Button variant="contained" onClick={submitOrder} disabled={loading} fullWidth sx={{ py: 1.5, fontWeight: 700 }}>
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'XÁC NHẬN & IN HÓA ĐƠN'}
+          </Button>
+        </DialogActions>
       </Dialog>
 
-      <Dialog open={openQRDialog} onClose={() => setOpenQRDialog(false)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold', color: 'primary.main' }}>Quét Mã QR</DialogTitle>
+      <Dialog open={openQRDialog} onClose={() => !loading && setOpenQRDialog(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ textAlign: 'center', fontWeight: 'bold' }}>QUÉT MÃ THANH TOÁN</DialogTitle>
         <DialogContent sx={{ textAlign: 'center' }}>
-          <Typography variant="h6" color="error" mb={2} fontWeight={800}>{formatCurrency(total)}</Typography>
-          <Box component="img" src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=POS&accountName=NGUYEN%20LUU%20HUNG`} sx={{ width: '100%', maxWidth: 250, border: '1px solid #eee', p: 1, borderRadius: 2 }} />
+          <Typography variant="h5" color="error" mb={2} fontWeight={900}>{formatCurrency(total)}</Typography>
+          <Box component="img" src={`https://img.vietqr.io/image/970405-3517205272726-compact2.png?amount=${total}&addInfo=ORDER&accountName=RETAIL_AI`} sx={{ width: '100%', maxWidth: 220, border: '2px solid #eee', p: 1, borderRadius: 2 }} />
         </DialogContent>
-        <DialogActions sx={{ justifyContent: 'center', pb: 3 }}><Button variant="contained" color="success" onClick={submitOrder} fullWidth sx={{ mx: 2 }}>Đã nhận tiền</Button></DialogActions>
+        <DialogActions sx={{ pb: 3, px: 3 }}>
+          <Button variant="contained" color="success" onClick={submitOrder} disabled={loading} fullWidth sx={{ fontWeight: 700 }}>
+            {loading ? <CircularProgress size={24} color="inherit" /> : 'TÔI ĐÃ NHẬN ĐỦ TIỀN'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Box>
   );
