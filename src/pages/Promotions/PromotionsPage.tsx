@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  Box, Card, CardContent, Typography, Button, Dialog, DialogTitle,
+  Box, Card, Typography, Button, Dialog, DialogTitle,
   DialogContent, DialogActions, TextField, IconButton, Table, TableBody,
   TableCell, TableContainer, TableHead, TableRow, Chip, MenuItem,
   FormControl, InputLabel, Select, CircularProgress, Divider
@@ -10,7 +10,6 @@ import {
   LocalOffer as OfferIcon, Close as CloseIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-import { useAuthStore } from '../../store/authStore';
 import { format, isAfter, parseISO } from 'date-fns';
 import { promotionAPI } from '../../api/client';
 
@@ -30,7 +29,7 @@ export const PromotionsPage: React.FC = () => {
     discountValue: 0,
     minPurchase: 0,
     maxDiscount: 0,
-    applyFor: 'ALL', // 🟢 MẶC ĐỊNH ÁP DỤNG CHO TẤT CẢ
+    applyFor: 'ALL', 
     startDate: format(new Date(), 'yyyy-MM-dd'),
     endDate: format(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), 'yyyy-MM-dd'),
     isActive: true,
@@ -64,7 +63,7 @@ export const PromotionsPage: React.FC = () => {
         discountValue: promo.discountValue,
         minPurchase: promo.minPurchase || 0,
         maxDiscount: promo.maxDiscount || 0,
-        applyFor: promo.applyFor || 'ALL', // 🟢 LOAD DỮ LIỆU CŨ
+        applyFor: promo.applyFor || 'ALL',
         startDate: promo.startDate,
         endDate: promo.endDate,
         isActive: promo.isActive ?? true,
@@ -94,7 +93,8 @@ export const PromotionsPage: React.FC = () => {
     const payload = {
       ...formData,
       code: formData.code.toUpperCase(),
-      maxDiscount: (formData.discountType === 'FIXED' || !formData.isMaxLimit) ? 0 : formData.maxDiscount,
+      // 🟢 CHỖ SỬA 1: Gửi null cho maxDiscount để Backend nhận diện "Không giới hạn"
+      maxDiscount: (formData.discountType === 'FIXED' || !formData.isMaxLimit) ? null : formData.maxDiscount,
       minPurchase: formData.minPurchase || 0,
     };
 
@@ -109,6 +109,9 @@ export const PromotionsPage: React.FC = () => {
       loadPromotions();
       setOpenDialog(false);
     } catch (err: any) {
+      // 🟢 CHỖ SỬA 2: In log chi tiết để Thành dễ debug nếu Backend báo lỗi trường applyFor
+      console.error("Payload gửi đi:", payload);
+      console.error("Lỗi từ server:", err.response?.data);
       showToast(err.response?.data?.message || 'Lưu thất bại', 'error');
     }
   };
@@ -116,7 +119,6 @@ export const PromotionsPage: React.FC = () => {
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  // Helper để hiển thị tên hạng thẻ thân thiện hơn
   const getRankLabel = (rank: string) => {
     switch(rank) {
         case 'BRONZE': return 'Hạng Đồng';
@@ -144,7 +146,7 @@ export const PromotionsPage: React.FC = () => {
               <TableRow>
                 <TableCell sx={{ fontWeight: 600 }}>Mã KM</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Tên Chương Trình</TableCell>
-                <TableCell sx={{ fontWeight: 600 }}>Đối Tượng</TableCell> {/* 🟢 THÊM CỘT MỚI */}
+                <TableCell sx={{ fontWeight: 600 }}>Đối Tượng</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Loại Giảm</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Giá Trị</TableCell>
                 <TableCell sx={{ fontWeight: 600 }}>Thời Gian</TableCell>
@@ -152,41 +154,54 @@ export const PromotionsPage: React.FC = () => {
                 <TableCell align="right" sx={{ fontWeight: 600 }}>Thao Tác</TableCell>
               </TableRow>
             </TableHead>
+            {/* 🟢 CHỖ SỬA 3: Sửa TableBody để tránh lỗi Whitespace warning */}
             <TableBody>
               {loading ? (
-                <TableRow><TableCell colSpan={8} align="center"><CircularProgress size={24} /></TableCell></TableRow>
-              ) : promotions.map((promo) => (
-                <TableRow key={promo.id} hover>
-                  <TableCell sx={{ fontWeight: 700, color: '#1976d2' }}>{promo.code}</TableCell>
-                  <TableCell>
-                    <Typography variant="body2" sx={{ fontWeight: 500 }}>{promo.name}</Typography>
-                    <Typography variant="caption" color="text.secondary">{promo.description}</Typography>
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={getRankLabel(promo.applyFor)} size="small" variant="filled" color={promo.applyFor === 'ALL' ? 'default' : 'primary'} />
-                  </TableCell>
-                  <TableCell>
-                    <Chip 
-                        label={promo.discountType === 'PERCENTAGE' ? (promo.maxDiscount > 0 ? '% (Có trần)' : '% (Cố định)') : 'VNĐ'} 
-                        size="small" variant="outlined" 
-                    />
-                  </TableCell>
-                  <TableCell sx={{ fontWeight: 600 }}>
-                    {promo.discountType === 'PERCENTAGE' ? `${promo.discountValue}%` : formatCurrency(promo.discountValue)}
-                    {promo.maxDiscount > 0 && <Typography variant="caption" display="block" color="error">Tối đa: {formatCurrency(promo.maxDiscount)}</Typography>}
-                  </TableCell>
-                  <TableCell sx={{ fontSize: '0.8rem' }}>
-                    {promo.startDate} đến {promo.endDate}
-                  </TableCell>
-                  <TableCell>
-                    <Chip label={promo.isActive ? 'Đang chạy' : 'Tạm ngưng'} color={promo.isActive ? 'success' : 'default'} size="small" />
-                  </TableCell>
-                  <TableCell align="right">
-                    <IconButton size="small" color="primary" onClick={() => handleOpenDialog(promo)}><EditIcon fontSize="small" /></IconButton>
-                    <IconButton size="small" color="error" onClick={() => promo.id && promotionAPI.delete(promo.id).then(() => {showToast('Đã xóa', 'success'); loadPromotions();})}><DeleteIcon fontSize="small" /></IconButton>
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    <CircularProgress size={24} />
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : promotions.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} align="center">
+                    Không có chương trình khuyến mãi nào
+                  </TableCell>
+                </TableRow>
+              ) : (
+                promotions.map((promo) => (
+                  <TableRow key={promo.id} hover>
+                    <TableCell sx={{ fontWeight: 700, color: '#1976d2' }}>{promo.code}</TableCell>
+                    <TableCell>
+                      <Typography variant="body2" sx={{ fontWeight: 500 }}>{promo.name}</Typography>
+                      <Typography variant="caption" color="text.secondary">{promo.description}</Typography>
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={getRankLabel(promo.applyFor)} size="small" variant="filled" color={promo.applyFor === 'ALL' ? 'default' : 'primary'} />
+                    </TableCell>
+                    <TableCell>
+                      <Chip 
+                          label={promo.discountType === 'PERCENTAGE' ? (promo.maxDiscount > 0 ? '% (Có trần)' : '% (Cố định)') : 'VNĐ'} 
+                          size="small" variant="outlined" 
+                      />
+                    </TableCell>
+                    <TableCell sx={{ fontWeight: 600 }}>
+                      {promo.discountType === 'PERCENTAGE' ? `${promo.discountValue}%` : formatCurrency(promo.discountValue)}
+                      {promo.maxDiscount > 0 && <Typography variant="caption" display="block" color="error">Tối đa: {formatCurrency(promo.maxDiscount)}</Typography>}
+                    </TableCell>
+                    <TableCell sx={{ fontSize: '0.8rem' }}>
+                      {promo.startDate} đến {promo.endDate}
+                    </TableCell>
+                    <TableCell>
+                      <Chip label={promo.isActive ? 'Đang chạy' : 'Tạm ngưng'} color={promo.isActive ? 'success' : 'default'} size="small" />
+                    </TableCell>
+                    <TableCell align="right">
+                      <IconButton size="small" color="primary" onClick={() => handleOpenDialog(promo)}><EditIcon fontSize="small" /></IconButton>
+                      <IconButton size="small" color="error" onClick={() => promo.id && promotionAPI.delete(promo.id).then(() => {showToast('Đã xóa', 'success'); loadPromotions();})}><DeleteIcon fontSize="small" /></IconButton>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
         </TableContainer>
@@ -224,7 +239,6 @@ export const PromotionsPage: React.FC = () => {
           <TextField label="Tên chương trình (*)" size="small" fullWidth value={formData.name} onChange={(e) => setFormData({...formData, name: e.target.value})} />
           
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            {/* 🟢 MỤC CHỌN ĐỐI TƯỢNG ÁP DỤNG */}
             <FormControl size="small" fullWidth>
                 <InputLabel>Áp dụng cho đối tượng (*)</InputLabel>
                 <Select
