@@ -139,7 +139,7 @@ export const categoryAPI = {
 };
 
 export const productAPI = {
-  getAll: () => apiClient.get('/api/inventory/products'),
+  getAll: (params?: any) => apiClient.get('/api/inventory/products', { params }),
   create: (data: any) => apiClient.post('/api/inventory/products', data),
   update: (id: number, data: any) => apiClient.put(`/api/inventory/products/${id}`, data),
   delete: (id: number) => apiClient.delete(`/api/inventory/products/${id}`),

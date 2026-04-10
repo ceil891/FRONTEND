@@ -79,16 +79,31 @@ export const POSPage: React.FC = () => {
     return { subtotal: st, promoDiscount: pd, pointDiscount: pnd, total: Math.max(0, st - pd - pnd) };
   }, [cart, appliedPromotion, pointsToUse]);
 
-  const addProduct = (p: any) => {
-    const variant = p.variants?.[0];
-    if (!variant || variant.quantity <= 0) return showToast('Sản phẩm này đã hết hàng!', 'error');
-    const exist = cart.find(i => i.variantId === variant.id);
-    if (exist) {
-      setCart(cart.map(i => i.variantId === variant.id ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.unitPrice } : i));
-    } else {
-      setCart([...cart, { variantId: variant.id, productName: p.name, quantity: 1, unitPrice: variant.sellPrice || p.baseRetailPrice, total: variant.sellPrice || p.baseRetailPrice }]);
-    }
-  };
+const addProduct = (p: any) => {
+  const variant = p.variants?.[0];
+  if (!variant || variant.quantity <= 0) return showToast('Sản phẩm này đã hết hàng!', 'error');
+  
+  const exist = cart.find(i => i.variantId === variant.id);
+  // Lấy ảnh đầu tiên nếu có
+  const productImage = p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls[0] : '';
+
+  if (exist) {
+    setCart(cart.map(i => 
+      i.variantId === variant.id 
+        ? { ...i, quantity: i.quantity + 1, total: (i.quantity + 1) * i.unitPrice } 
+        : i
+    ));
+  } else {
+    setCart([...cart, { 
+      variantId: variant.id, 
+      productName: p.name, 
+      productImage: productImage, // Thêm dòng này
+      quantity: 1, 
+      unitPrice: variant.sellPrice || p.baseRetailPrice, 
+      total: variant.sellPrice || p.baseRetailPrice 
+    }]);
+  }
+};
 
   const submitOrder = async () => {
     if (!selectedStore) return showToast('Chưa chọn cửa hàng', 'error');
@@ -166,13 +181,35 @@ export const POSPage: React.FC = () => {
             <Box sx={{ flex: 1, overflowY: 'auto' }}>
               <Grid container spacing={1}>
                 {products.filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase())).map(p => (
-                  <Grid item xs={4} key={p.id}>
-                    <Card onClick={() => addProduct(p)} sx={{ p: 1, cursor: 'pointer', textAlign: 'center', border: '1px solid #e2e8f0' }}>
-                      <Typography variant="body2" fontWeight={700} noWrap>{p.name}</Typography>
-                      <Typography variant="body2" color="error" fontWeight={800}>{formatCurrency(p.baseRetailPrice)}</Typography>
-                    </Card>
-                  </Grid>
-                ))}
+                  <Grid item xs={4} sm={4} md={3} key={p.id}>
+                    <Card 
+                      onClick={() => addProduct(p)} 
+                      sx={{ 
+                      p: 1, 
+                      cursor: 'pointer', 
+                      textAlign: 'center', 
+                      border: '1px solid #e2e8f0',
+                      transition: '0.2s',
+                      '&:hover': { borderColor: '#1976d2', boxShadow: 3 }
+                    }}
+                      >
+                        {/* Thêm phần hiển thị ảnh ở đây */}
+                        <Box 
+                          component="img"
+                          src={p.imageUrls && p.imageUrls.length > 0 ? p.imageUrls[0] : 'https://via.placeholder.com/150?text=No+Image'}
+                          alt={p.name}
+                          sx={{ width: '100%', height: 80, objectFit: 'cover', borderRadius: 1, mb: 1 }}
+                        />
+                        
+                        <Typography variant="body2" fontWeight={700} noWrap title={p.name}>
+                          {p.name}
+                        </Typography>
+                        <Typography variant="body2" color="error" fontWeight={800}>
+                          {formatCurrency(p.baseRetailPrice)}
+                        </Typography>
+                      </Card>
+                    </Grid>
+                  ))}
               </Grid>
             </Box>
           </Card>
@@ -182,15 +219,54 @@ export const POSPage: React.FC = () => {
           <Card sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ p: 1.5, bgcolor: '#1e293b', color: '#fff' }}><Typography variant="subtitle2" fontWeight={700}>GIỎ HÀNG - {selectedStore.name}</Typography></Box>
             
-            <Box sx={{ flex: 1, overflowY: 'auto', p: 1 }}>
-              {cart.map(item => (
-                <Box key={item.variantId} sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1, pb: 1, borderBottom: '1px dashed #e2e8f0' }}>
-                  <Typography variant="body2" fontWeight={700} sx={{ width: '50%' }}>{item.productName}</Typography>
-                  <Typography variant="body2" fontWeight={800} color="error">{formatCurrency(item.total)}</Typography>
-                  <IconButton size="small" color="error" onClick={() => setCart(cart.filter(i => i.variantId !== item.variantId))}><DeleteIcon fontSize="inherit" /></IconButton>
-                </Box>
-              ))}
-            </Box>
+                        <Box sx={{ flex: 1, overflowY: 'auto', p: 1 }}>
+                          {cart.map(item => (
+                            <Box 
+                              key={item.variantId} 
+                              sx={{ 
+                                display: 'flex', 
+                                alignItems: 'center', // Căn giữa theo chiều dọc
+                                mb: 1, 
+                                pb: 1, 
+                                borderBottom: '1px dashed #e2e8f0' 
+                              }}
+                            >
+                              {/* Hiển thị ảnh sản phẩm trong giỏ hàng */}
+                              <Box 
+                                component="img"
+                                src={item.productImage || 'https://via.placeholder.com/50?text=No+Img'}
+                                sx={{ 
+                                  width: 45, 
+                                  height: 45, 
+                                  objectFit: 'cover', 
+                                  borderRadius: 1, 
+                                  mr: 1.5 // Khoảng cách giữa ảnh và tên
+                                }}
+                              />
+
+                              <Box sx={{ flex: 1 }}>
+                                <Typography variant="body2" fontWeight={700} noWrap sx={{ maxWidth: '150px' }}>
+                                  {item.productName}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  SL: {item.quantity} x {formatCurrency(item.unitPrice)}
+                                </Typography>
+                              </Box>
+
+                              <Typography variant="body2" fontWeight={800} color="error" sx={{ ml: 1 }}>
+                                {formatCurrency(item.total)}
+                              </Typography>
+
+                              <IconButton 
+                                size="small" 
+                                color="error" 
+                                onClick={() => setCart(cart.filter(i => i.variantId !== item.variantId))}
+                              >
+                                <DeleteIcon fontSize="inherit" />
+                              </IconButton>
+                            </Box>
+                          ))}
+                        </Box>
 
             <Box sx={{ p: 2, bgcolor: '#f8fafc', borderTop: '1px solid #e2e8f0' }}>
               {!selectedCustomer ? (
