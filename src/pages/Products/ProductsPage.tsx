@@ -50,6 +50,12 @@ export const ProductsPage: React.FC = () => {
   // --- HELPER FUNCTIONS ---
   const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN').format(val || 0) + 'đ';
 
+  // Tính tổng số lượng tồn kho của một sản phẩm
+  const getTotalQuantity = (p: any) => {
+    if (!p.variants || !Array.isArray(p.variants)) return 0;
+    return p.variants.reduce((sum: number, v: any) => sum + (Number(v.quantity) || 0), 0);
+  };
+
   const extractData = (response: any) => {
     if (!response) return [];
     if (Array.isArray(response)) return response;
@@ -78,7 +84,6 @@ export const ProductsPage: React.FC = () => {
     return p.imageUrl || p.hinhAnhUrl || p.image || null;
   };
 
-  // 🟢 THÊM HÀM QUÉT SÂU TÌM ID CỦA DANH MỤC VÀ ĐƠN VỊ TỪ BACKEND
   const getCategoryId = (p: any) => p?.categoryId ?? p?.danhMucId ?? p?.category?.id ?? p?.danhMuc?.id ?? '';
   const getUnitId = (p: any) => p?.unitId ?? p?.donViId ?? p?.unit?.id ?? p?.donVi?.id ?? '';
 
@@ -102,7 +107,8 @@ export const ProductsPage: React.FC = () => {
       colorId: cId !== '' && cId !== null ? String(cId) : '',
       sizeId: sId !== '' && sId !== null ? String(sId) : '',
       colorName: v.colorName ?? v.tenMau ?? v.color?.name ?? v.color?.tenMau ?? '',
-      sizeName: v.sizeName ?? v.tenKichThuoc ?? v.size?.name ?? v.size?.tenKichThuoc ?? ''
+      sizeName: v.sizeName ?? v.tenKichThuoc ?? v.size?.name ?? v.size?.tenKichThuoc ?? '',
+      quantity: Math.max(0, Number(v.quantity || 0)) // Đảm bảo không âm khi load
     };
   };
 
@@ -146,7 +152,6 @@ export const ProductsPage: React.FC = () => {
       setFormData({
         code: p.code || p.maSku || '', 
         name: p.name || p.tenSanPham || '',
-        // 🟢 FIX LỖI KHÔNG HIỆN DANH MỤC/ĐƠN VỊ KHI SỬA SẢN PHẨM
         categoryId: getCategoryId(p) !== '' ? String(getCategoryId(p)) : '', 
         unitId: getUnitId(p) !== '' ? String(getUnitId(p)) : '',
         price: p.baseRetailPrice || p.giaBan || p.price || 0, 
@@ -175,7 +180,8 @@ export const ProductsPage: React.FC = () => {
       ...formData,
       variants: [...formData.variants, {
         sku: `${formData.code || 'SP'}-V${formData.variants.length + 1}`,
-        colorId: '', sizeId: '', costPrice: formData.costPrice, sellPrice: formData.price, quantity: 0
+        colorId: '', sizeId: '', costPrice: formData.costPrice, sellPrice: formData.price, 
+        quantity: 0 // Tự động gán bằng 0
       }]
     });
   };
@@ -229,7 +235,9 @@ export const ProductsPage: React.FC = () => {
         variants: formData.variants.map(v => ({
           id: v.id,
           sku: v.sku, colorId: v.colorId ? Number(v.colorId) : null, sizeId: v.sizeId ? Number(v.sizeId) : null,
-          costPrice: Number(v.costPrice), sellPrice: Number(v.sellPrice), quantity: Number(v.quantity), status: 'ACTIVE'
+          costPrice: Number(v.costPrice), sellPrice: Number(v.sellPrice), 
+          quantity: Number(v.quantity) || 0, // Đảm bảo an toàn không null/âm
+          status: 'ACTIVE'
         }))
       };
 
@@ -290,6 +298,8 @@ export const ProductsPage: React.FC = () => {
               <TableCell sx={{ fontWeight: 600, color: '#475569' }}>Sản Phẩm</TableCell>
               <TableCell sx={{ fontWeight: 600, color: '#475569' }}>Danh Mục</TableCell>
               <TableCell align="center" sx={{ fontWeight: 600, color: '#475569' }}>Phân Loại</TableCell>
+              {/* THÊM CỘT SỐ LƯỢNG */}
+              <TableCell align="center" sx={{ fontWeight: 600, color: '#475569' }}>Số Lượng</TableCell>
               <TableCell align="right" sx={{ fontWeight: 600, color: '#475569' }}>Giá Bán</TableCell>
               <TableCell align="center" sx={{ fontWeight: 600, color: '#475569' }}>Trạng Thái</TableCell>
               <TableCell align="right" sx={{ fontWeight: 600, color: '#475569' }}>Thao Tác</TableCell>
@@ -297,7 +307,7 @@ export const ProductsPage: React.FC = () => {
           </TableHead>
           <TableBody>
             {loading && products.length === 0 ? (
-              <TableRow><TableCell colSpan={7} align="center" sx={{ py: 10 }}><CircularProgress /></TableCell></TableRow>
+              <TableRow><TableCell colSpan={8} align="center" sx={{ py: 10 }}><CircularProgress /></TableCell></TableRow>
             ) : filteredProducts.map((p) => (
               <TableRow key={p.id || p.sanPhamId} hover>
                 <TableCell>
@@ -313,9 +323,14 @@ export const ProductsPage: React.FC = () => {
                   <Typography variant="caption" color="text.secondary">SKU: {p.code || p.maSku}</Typography>
                 </TableCell>
 
-                {/* 🟢 CẬP NHẬT GỌI TÊN DANH MỤC TRONG BẢNG */}
                 <TableCell><Chip label={getCategoryName(getCategoryId(p))} size="small" variant="outlined" sx={{ borderRadius: 1 }} /></TableCell>
                 <TableCell align="center"><Chip label={`${p.variants?.length || 0} thuộc tính`} size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 600, borderRadius: 1 }} /></TableCell>
+                
+                {/* HIỂN THỊ TỔNG SỐ LƯỢNG TỒN KHO */}
+                <TableCell align="center">
+                  <Typography fontWeight={700} color="#0f172a">{getTotalQuantity(p)}</Typography>
+                </TableCell>
+
                 <TableCell align="right"><Typography fontWeight={700} color="#dc2626">{formatCurrency(p.baseRetailPrice || p.giaBan || p.price)}</Typography></TableCell>
                 <TableCell align="center"><Chip label={p.status === 'ACTIVE' || p.hoatDong !== false ? 'Đang bán' : 'Ngừng'} size="small" sx={{ bgcolor: (p.status === 'ACTIVE' || p.hoatDong !== false) ? '#dcfce7' : '#f1f5f9', color: (p.status === 'ACTIVE' || p.hoatDong !== false) ? '#166534' : '#64748b', fontWeight: 600, borderRadius: 1 }} /></TableCell>
                 <TableCell align="right">
@@ -334,7 +349,7 @@ export const ProductsPage: React.FC = () => {
         </Table>
       </TableContainer>
 
-      {/* 🟢 DIALOG XEM CHI TIẾT SẢN PHẨM 🟢 */}
+      {/* DIALOG XEM CHI TIẾT SẢN PHẨM */}
       <Dialog open={viewDetailOpen} onClose={() => setViewDetailOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 800, borderBottom: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fff' }}>
           THÔNG TIN CHI TIẾT
@@ -406,7 +421,7 @@ export const ProductsPage: React.FC = () => {
                               </TableCell>
                               <TableCell align="right" sx={{ color: '#dc2626', fontWeight: 700 }}>{formatCurrency(v.sellPrice || selectedProduct.baseRetailPrice)}</TableCell>
                               <TableCell align="center">
-                                <Chip label={v.quantity || 0} size="small" color={(v.quantity || 0) < 10 ? 'error' : 'primary'} variant="outlined" sx={{ fontWeight: 800, minWidth: 40 }} />
+                                <Chip label={Math.max(0, v.quantity || 0)} size="small" color={(v.quantity || 0) < 10 ? 'error' : 'primary'} variant="outlined" sx={{ fontWeight: 800, minWidth: 40 }} />
                               </TableCell>
                             </TableRow>
                           );
@@ -429,7 +444,7 @@ export const ProductsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* 🟢 DIALOG THÊM / SỬA SẢN PHẨM 🟢 */}
+      {/* DIALOG THÊM / SỬA SẢN PHẨM */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="lg" fullWidth sx={{ '& .MuiDialog-paper': { borderRadius: 3, bgcolor: '#f4f6f8' } }}>
         <DialogTitle sx={{ fontWeight: 800, bgcolor: '#fff', borderBottom: '1px solid #e2e8f0', py: 2 }}>
           {editingId ? 'CẬP NHẬT SẢN PHẨM' : 'THÊM SẢN PHẨM MỚI'}
@@ -467,7 +482,6 @@ export const ProductsPage: React.FC = () => {
                       <Grid item xs={6}><TextField fullWidth label="Mã Vạch (Barcode)" size="small" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} /></Grid>
                       
                       <Grid item xs={6}>
-                        {/* 🟢 FIX LỖI THẺ SELECT CHỈ ĐỊNH DISPLAYEMPTY VÀ THÊM LỰA CHỌN MẶC ĐỊNH */}
                         <FormControl fullWidth size="small">
                           <InputLabel id="category-label">Danh mục *</InputLabel>
                           <Select labelId="category-label" label="Danh mục *" displayEmpty value={formData.categoryId} onChange={e => setFormData({...formData, categoryId: e.target.value})}>
@@ -525,6 +539,7 @@ export const ProductsPage: React.FC = () => {
                         <TableCell sx={{ color: '#475569', fontWeight: 600 }}>Kích cỡ</TableCell>
                         <TableCell align="right" sx={{ color: '#475569', fontWeight: 600 }}>Giá nhập (đ)</TableCell>
                         <TableCell align="right" sx={{ color: '#475569', fontWeight: 600 }}>Giá bán (đ)</TableCell>
+                        {/* THAY ĐỔI LABEL THÀNH TỒN KHO */}
                         <TableCell align="center" sx={{ color: '#475569', fontWeight: 600 }}>Tồn kho</TableCell>
                         <TableCell align="center"></TableCell>
                       </TableRow>
@@ -564,7 +579,22 @@ export const ProductsPage: React.FC = () => {
 
                           <TableCell align="right"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.costPrice} onChange={e => updateVariant(i, 'costPrice', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
                           <TableCell align="right"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.sellPrice} onChange={e => updateVariant(i, 'sellPrice', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 100, input: { textAlign: 'right' } }} /></TableCell>
-                          <TableCell align="center"><TextField type="number" size="small" variant="standard" inputProps={{ min: 0 }} InputProps={{ disableUnderline: true }} value={v.quantity} onChange={e => updateVariant(i, 'quantity', Math.max(0, Number(e.target.value)))} sx={{ bgcolor: '#f1f5f9', px: 1, borderRadius: 1, width: 60, input: { textAlign: 'center' } }} /></TableCell>
+                          
+                          {/* 🟢 KHÓA SỐ LƯỢNG TỒN KHO LUÔN BẰNG 0 HOẶC SỐ HIỆN TẠI VÀ KHÔNG CHO SỬA TAY */}
+                          <TableCell align="center">
+                            <Tooltip title="Tồn kho chỉ được cập nhật qua phiếu Nhập/Xuất">
+                              <TextField 
+                                type="number" 
+                                size="small" 
+                                variant="standard" 
+                                disabled 
+                                InputProps={{ disableUnderline: true }} 
+                                value={v.quantity || 0} 
+                                sx={{ bgcolor: '#e2e8f0', px: 1, borderRadius: 1, width: 60, input: { textAlign: 'center', WebkitTextFillColor: '#475569' } }} 
+                              />
+                            </Tooltip>
+                          </TableCell>
+                          
                           <TableCell align="center"><IconButton color="error" size="small" onClick={() => removeVariant(i)}><RemoveIcon fontSize="small" /></IconButton></TableCell>
                         </TableRow>
                       ))}

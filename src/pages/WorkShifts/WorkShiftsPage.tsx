@@ -10,6 +10,7 @@ import {
   ExitToApp as LogoutIcon, History as HistoryIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
+import { useAuthStore } from '../../store/authStore'; 
 import { format } from 'date-fns';
 import { workShiftAPI, storeAPI, userAPI } from '../../api/client';
 
@@ -17,7 +18,9 @@ export const WorkShiftsPage: React.FC = () => {
   const [openDialog, setOpenDialog] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  
   const { showToast } = useToastStore();
+  const { user, isSuperAdmin } = useAuthStore(); 
 
   const [shifts, setShifts] = useState<any[]>([]);
   const [stores, setStores] = useState<any[]>([]);
@@ -40,7 +43,6 @@ export const WorkShiftsPage: React.FC = () => {
         userAPI.getAll()
       ]);
 
-      // Lấy data từ ApiResponse.java
       setShifts((shiftRes.data as any)?.data || shiftRes.data || []);
       setStores((storeRes.data as any)?.data || storeRes.data || []);
       setUsers((userRes.data as any)?.data || userRes.data || []);
@@ -54,6 +56,17 @@ export const WorkShiftsPage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, []);
+
+  const handleOpenDialog = () => {
+    setFormData({
+      storeId: user?.storeId ? user.storeId.toString() : '',
+      employeeId: user?.id ? user.id.toString() : '',
+      shiftDate: format(new Date(), 'yyyy-MM-dd'),
+      startTime: format(new Date(), 'HH:mm'),
+      notes: '',
+    });
+    setOpenDialog(true);
+  };
 
   const handleCheckIn = async () => {
     if (!formData.storeId || !formData.employeeId) {
@@ -101,7 +114,7 @@ export const WorkShiftsPage: React.FC = () => {
         <Button 
           variant="contained" 
           startIcon={<AddIcon />} 
-          onClick={() => setOpenDialog(true)} 
+          onClick={handleOpenDialog} 
           sx={{ bgcolor: '#00a65a', textTransform: 'none' }}
         >
           Mở Ca Check-in
@@ -129,10 +142,8 @@ export const WorkShiftsPage: React.FC = () => {
                 <TableRow><TableCell colSpan={7} align="center" sx={{ py: 3 }}>Chưa có ca làm việc nào</TableCell></TableRow>
               ) : shifts.map((shift) => (
                 <TableRow key={shift.id} hover>
-                  {/* 👉 Dùng trực tiếp employeeName và storeName từ Backend trả về */}
                   <TableCell sx={{ fontWeight: 600 }}>{shift.employeeName || 'N/A'}</TableCell>
                   <TableCell>{shift.storeName || 'N/A'}</TableCell>
-                  
                   <TableCell>{shift.shiftDate}</TableCell>
                   <TableCell sx={{ color: '#00a65a', fontWeight: 600 }}>{shift.startTime}</TableCell>
                   <TableCell sx={{ color: '#dd4b39', fontWeight: 600 }}>{shift.endTime || '--:--'}</TableCell>
@@ -169,9 +180,11 @@ export const WorkShiftsPage: React.FC = () => {
             <Select 
               label="Cửa Hàng" 
               value={formData.storeId} 
-              onChange={(e) => setFormData({...formData, storeId: e.target.value})}
+              // CƠ CHẾ RESET: Khi đổi cửa hàng, ép employeeId về rỗng để phải chọn lại nhân viên
+              onChange={(e) => setFormData({...formData, storeId: e.target.value, employeeId: ''})}
+              disabled={!isSuperAdmin() && !!user?.storeId} 
             >
-              {stores.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
+              {stores.map(s => <MenuItem key={s.id} value={s.id.toString()}>{s.name}</MenuItem>)}
             </Select>
           </FormControl>
 
@@ -181,8 +194,17 @@ export const WorkShiftsPage: React.FC = () => {
               label="Nhân Viên" 
               value={formData.employeeId} 
               onChange={(e) => setFormData({...formData, employeeId: e.target.value})}
+              // Mở khóa cho Quản lý (MANAGER) và Super Admin được phép check-in cho nhân viên khác
+              disabled={!isSuperAdmin() && user?.role !== 'MANAGER'} 
             >
-              {users.map(u => <MenuItem key={u.id} value={u.id}>{u.fullName}</MenuItem>)}
+              {/* CƠ CHẾ LỌC: Chỉ hiển thị user có storeId khớp với storeId đã chọn ở trên */}
+              {users
+                .filter(u => {
+                  if (!formData.storeId) return false; // Không chọn cửa hàng -> Không hiện nhân viên nào
+                  return u.storeId?.toString() === formData.storeId.toString();
+                })
+                .map(u => <MenuItem key={u.id} value={u.id.toString()}>{u.fullName}</MenuItem>)
+              }
             </Select>
           </FormControl>
 

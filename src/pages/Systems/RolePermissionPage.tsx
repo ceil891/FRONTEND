@@ -44,13 +44,14 @@ const initialMenuPermissions = [
 
 export const RolePermissionPage: React.FC = () => {
   const { showToast } = useToastStore();
-  const [selectedRole, setSelectedRole] = useState('ACCOUNTANT');
+
+  const [selectedRole, setSelectedRole] = useState('WAREHOUSE_STAFF');
   
   const [globalSettings, setGlobalSettings] = useState(initialGlobalSettings);
   const [dashboardSettings, setDashboardSettings] = useState(initialDashboardSettings);
   const [menuPermissions, setMenuPermissions] = useState(initialMenuPermissions);
 
-  // Xử lý tick chọn 1 ô cụ thể
+
   const handleActionToggle = (id: number, action: ActionType) => {
     setMenuPermissions(prev => prev.map(menu => {
       if (menu.id === id) {
@@ -60,7 +61,6 @@ export const RolePermissionPage: React.FC = () => {
     }));
   };
 
-  // Xử lý tick chọn TOÀN BỘ 1 hàng (Tiện ích "Check All" cho người dùng)
   const handleRowToggleAll = (id: number, currentStatus: boolean) => {
     setMenuPermissions(prev => prev.map(menu => {
       if (menu.id === id) {
@@ -92,7 +92,8 @@ export const RolePermissionPage: React.FC = () => {
             <Select value={selectedRole} label="Chọn nhóm quyền cần sửa" onChange={(e) => setSelectedRole(e.target.value)}>
               <MenuItem value="ADMIN">Quản trị viên (Admin)</MenuItem>
               <MenuItem value="MANAGER">Quản lý cửa hàng (Manager)</MenuItem>
-              <MenuItem value="ACCOUNTANT">Kế toán (Accountant)</MenuItem>
+              <MenuItem value="WAREHOUSE_STAFF">Nhân viên kho (WAREHOUSE_STAF)</MenuItem>
+              <MenuItem value="SALES_STAFF">Nhân viên bán hàng (Sales)</MenuItem>
               <MenuItem value="CASHIER">Thu ngân (Cashier)</MenuItem>
             </Select>
           </FormControl>

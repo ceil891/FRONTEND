@@ -2,20 +2,18 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, TextField,
-  Grid, Button, Avatar, IconButton, CircularProgress, Tooltip
+  Grid, Button, Avatar, IconButton, CircularProgress, InputAdornment
 } from '@mui/material';
 import {
-  Stars as StarsIcon, CardGiftcard as GiftIcon, 
+  CardGiftcard as GiftIcon, 
   History as HistoryIcon, Save as SaveIcon,
   Print as PrintIcon, FileDownload as ExcelIcon,
-  Sync as SyncIcon
+  Sync as SyncIcon, Search as SearchIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-import { loyaltyAPI } from '../../api/client'; // Kiểm tra kỹ đường dẫn này
-import dayjs from 'dayjs';
+import { loyaltyAPI } from '../../api/client';
 
 export const LoyaltyPage: React.FC = () => {
-  // ✅ Khởi tạo mặc định là mảng rỗng [] để tránh lỗi .map()
   const [members, setMembers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -27,17 +25,14 @@ export const LoyaltyPage: React.FC = () => {
 
   const { showToast } = useToastStore();
 
-  // 1. Hàm gọi API - Có bọc try/catch cực kỹ
   const fetchLoyaltyData = useCallback(async () => {
     setLoading(true);
     try {
-      console.log("Đang gọi API Loyalty..."); // Debug log
       const [configRes, membersRes] = await Promise.all([
         loyaltyAPI.getConfig(),
         loyaltyAPI.getMembers(searchQuery)
       ]);
 
-      // Kiểm tra data config
       if (configRes?.data?.success && configRes?.data?.data) {
         const cfg = configRes.data.data;
         setConfigParams({
@@ -46,20 +41,17 @@ export const LoyaltyPage: React.FC = () => {
         });
       }
 
-      // Kiểm tra data members - Luôn đảm bảo là mảng
-      const membersData = membersRes?.data?.data || [];
+      const membersData = membersRes?.data?.data || membersRes.data || [];
       setMembers(Array.isArray(membersData) ? membersData : []);
       
     } catch (error: any) {
-      console.error("Lỗi API:", error);
       showToast(error.message || 'Không thể tải dữ liệu hội viên', 'error');
-      setMembers([]); // Nếu lỗi thì về mảng rỗng, không để null
+      setMembers([]); 
     } finally {
       setLoading(false);
     }
   }, [searchQuery, showToast]);
 
-  // Debounce tìm kiếm 500ms
   useEffect(() => {
     const handler = setTimeout(() => {
       fetchLoyaltyData();
@@ -67,7 +59,6 @@ export const LoyaltyPage: React.FC = () => {
     return () => clearTimeout(handler);
   }, [fetchLoyaltyData]);
 
-  // 2. Lưu cấu hình
   const handleSaveConfig = async () => {
     try {
       setLoading(true);
@@ -87,14 +78,12 @@ export const LoyaltyPage: React.FC = () => {
   const formatCurrency = (value: number) => 
     new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  const getTierStyle = (tier: string) => {
-    const t = String(tier || "").toUpperCase();
-    switch(t) {
-      case 'DIAMOND': return { label: 'Kim Cương', color: '#2563eb', bg: '#eff6ff' };
-      case 'GOLD': return { label: 'Vàng', color: '#d97706', bg: '#fef3c7' };
-      case 'SILVER': return { label: 'Bạc', color: '#475569', bg: '#f1f5f9' };
-      default: return { label: 'Đồng', color: '#c2410c', bg: '#ffedd5' };
-    }
+  const getTierStyle = (rank: string) => {
+    const r = String(rank || "Đồng");
+    if (r.includes('Vàng')) return { label: 'Vàng', color: '#d97706', bg: '#fef3c7' };
+    if (r.includes('Bạc')) return { label: 'Bạc', color: '#475569', bg: '#f1f5f9' };
+    if (r.includes('Kim Cương')) return { label: 'Kim Cương', color: '#2563eb', bg: '#eff6ff' };
+    return { label: 'Đồng', color: '#c2410c', bg: '#ffedd5' };
   };
 
   return (
@@ -108,8 +97,8 @@ export const LoyaltyPage: React.FC = () => {
         </Button>
       </Box>
 
-      {/* BLOCK 1: THIẾT LẬP */}
-      <Card sx={{ borderRadius: 3, mb: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: 'none' }}>
+      {/* THIẾT LẬP ĐỊNH MỨC */}
+      <Card sx={{ borderRadius: 3, mb: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
         <CardContent sx={{ p: 2.5 }}>
           <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
             <GiftIcon color="primary" /> Thiết lập định mức quy đổi
@@ -138,7 +127,7 @@ export const LoyaltyPage: React.FC = () => {
               </Box>
             </Grid>
             <Grid item xs={12} md={4} sx={{ display: 'flex', justifyContent: 'flex-end' }}>
-              <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveConfig} disabled={loading} sx={{ bgcolor: '#00a65a', textTransform: 'none', px: 3 }}>
+              <Button variant="contained" startIcon={<SaveIcon />} onClick={handleSaveConfig} disabled={loading} sx={{ bgcolor: '#00a65a', px: 3 }}>
                 Lưu cấu hình
               </Button>
             </Grid>
@@ -146,13 +135,14 @@ export const LoyaltyPage: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* BLOCK 2: DANH SÁCH */}
-      <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)', border: 'none' }}>
+      {/* DANH SÁCH HỘI VIÊN */}
+      <Card sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(0,0,0,0.05)' }}>
         <Box sx={{ p: 2, display: 'flex', gap: 1.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
           <TextField 
             size="small" placeholder="Tìm tên hoặc số điện thoại..." 
             value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
             sx={{ width: 300 }}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small"/></InputAdornment> }}
           />
           <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be' }}>In</Button>
           <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7' }}>Excel</Button>
@@ -176,7 +166,7 @@ export const LoyaltyPage: React.FC = () => {
               ) : members.length === 0 ? (
                 <TableRow><TableCell colSpan={6} align="center" sx={{ py: 10, color: 'text.secondary' }}>Không có dữ liệu hội viên</TableCell></TableRow>
               ) : members.map((row) => {
-                const tier = getTierStyle(row.tier);
+                const tier = getTierStyle(row.rank);
                 return (
                   <TableRow key={row.id} hover>
                     <TableCell sx={{ fontWeight: 600, color: '#64748b' }}>{row.code}</TableCell>
@@ -189,7 +179,10 @@ export const LoyaltyPage: React.FC = () => {
                     <TableCell>
                       <Chip label={tier.label} size="small" sx={{ bgcolor: tier.bg, color: tier.color, fontWeight: 700 }} />
                     </TableCell>
-                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(row.totalSpent)}</TableCell>
+                    
+                    {/* 🟢 ĐÃ SỬA: totalSpending -> totalSpend để khớp Backend */}
+                    <TableCell align="right" sx={{ fontWeight: 600 }}>{formatCurrency(row.totalSpend)}</TableCell>
+                    
                     <TableCell align="right" sx={{ fontWeight: 800, color: '#b45309' }}>{(row.currentPoints || 0).toLocaleString()}</TableCell>
                     <TableCell align="center">
                       <IconButton size="small" color="primary"><HistoryIcon fontSize="small" /></IconButton>

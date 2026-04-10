@@ -1,222 +1,304 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Box, Card, CardContent, Typography, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, TextField, Button, Pagination,
-  Checkbox, Chip, Dialog, DialogTitle, DialogContent, DialogActions, IconButton
+  TableContainer, TableHead, TableRow, Button, IconButton, TextField,
+  Dialog, DialogTitle, DialogContent, DialogActions, Chip, CircularProgress,
+  InputAdornment, Paper, List, ListItemButton, ListItemText, Stack, Tabs, Tab
 } from '@mui/material';
 import {
-  Add as AddIcon, Delete as DeleteIcon, Print as PrintIcon, 
-  FileDownload as ExcelIcon, FilterAlt as FilterIcon,
-  Visibility as ViewIcon, Edit as EditIcon,
-  AccountBalanceWallet as DebtIcon
+  Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon,
+  Search as SearchIcon, Close as CloseIcon,
+  RemoveCircleOutline as RemoveIcon,
+  History as HistoryIcon
 } from '@mui/icons-material';
 import { useToastStore } from '../../store/toastStore';
-
-// IMPORT API VÀ TYPES
-import { supplierAPI } from '../../api/client';
-import { BackendSupplier } from '../../types/api.types';
+import { supplierAPI, productAPI, importTicketAPI } from '../../api/client';
 
 export const SuppliersPage: React.FC = () => {
-  const [suppliers, setSuppliers] = useState<BackendSupplier[]>([]);
+  const [suppliers, setSuppliers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  // State quản lý Popup Form
-  const [openDialog, setOpenDialog] = useState(false);
-  const [editingItem, setEditingItem] = useState<BackendSupplier | null>(null);
-  const [formData, setFormData] = useState({ 
-    supplierCode: '', supplierName: '', contactName: '', 
-    phone: '', email: '', address: '', isActive: true 
-  });
-
   const { showToast } = useToastStore();
-  const formatCurrency = (value: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
 
-  // 1. Hàm Load danh sách "bao lô" mọi định dạng từ Backend
-  const fetchSuppliers = async () => {
+  // --- STATE CHO FORM THÊM/SỬA ---
+  const [openDialog, setOpenDialog] = useState(false);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [formData, setFormData] = useState({ name: '', contactPerson: '', phone: '', email: '', address: '' });
+
+  // --- STATE CHO DIALOG CHI TIẾT (LỊCH SỬ & DANH MỤC) ---
+  const [openDetail, setOpenDetail] = useState(false);
+  const [tabValue, setTabValue] = useState(0);
+  const [selectedSupplier, setSelectedSupplier] = useState<any>(null);
+  const [historyTickets, setHistoryTickets] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [supplierProducts, setSupplierProducts] = useState<any[]>([]);
+  const [productSearch, setProductSearch] = useState('');
+  const [allProducts, setAllProducts] = useState<any[]>([]);
+  const [savingConfig, setSavingConfig] = useState(false);
+
+  const formatCurrency = (val: number) => new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(val || 0);
+
+  const loadSuppliers = async () => {
     try {
+      setLoading(true);
       const res = await supplierAPI.getAll();
-      
-      const responseData = res.data as any;
-      const items = Array.isArray(responseData) ? responseData : (responseData?.data || []);
-      
-      setSuppliers(items);
-    } catch (error: any) {
-      showToast(error.message || 'Lỗi tải danh sách Nhà cung cấp', 'error');
-    }
+      setSuppliers(res.data?.data || res.data || []);
+    } catch (error) {
+      showToast('Lỗi tải danh sách nhà cung cấp', 'error');
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchSuppliers();
-  }, []);
-
-  // 2. Lọc tìm kiếm (Đã sửa tên biến cho khớp Backend)
-  const filteredSuppliers = suppliers.filter(s => 
-    (s.name || '').toLowerCase().includes(searchQuery.toLowerCase()) || 
-    (s.code || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (s.phone || '').includes(searchQuery)
-  );
-
-  // 3. Mở Form (Đã sửa luồng đọc dữ liệu đổ vào form)
-  const handleOpenDialog = (item?: any) => {
-    if (item) {
-      setEditingItem(item);
-      setFormData({ 
-        supplierCode: item.code || '', 
-        supplierName: item.name || '', 
-        contactName: item.contactPerson || '',
-        phone: item.phone || '',
-        email: item.email || '',
-        address: item.address || '',
-        isActive: item.status === 'ACTIVE' 
+  const loadAllProductsForSearch = async () => {
+    try {
+      const res = await productAPI.getAll();
+      const rawProducts = res.data?.data || res.data || [];
+      const variants = rawProducts.flatMap((product: any) => {
+        if (product.variants && Array.isArray(product.variants)) {
+          return product.variants.map((v: any) => {
+            const attributes = [v.colorName, v.sizeName].filter(Boolean).join(' - ');
+            return {
+              variantId: v.id,
+              sku: v.sku,
+              variantName: attributes ? `${product.name} (${attributes})` : product.name,
+              costPrice: v.costPrice || product.baseCostPrice || 0
+            };
+          });
+        }
+        return [];
       });
+      setAllProducts(variants);
+    } catch (error) { console.error(error); }
+  };
+
+  useEffect(() => { loadSuppliers(); loadAllProductsForSearch(); }, []);
+
+  const filteredSuppliers = useMemo(() => {
+    const kw = searchQuery.trim().toLowerCase();
+    if (!kw) return suppliers;
+    return suppliers.filter(s => 
+      (s.name || '').toLowerCase().includes(kw) || (s.phone || '').includes(kw) || (s.code || '').toLowerCase().includes(kw)
+    );
+  }, [suppliers, searchQuery]);
+
+  // ==========================================
+  // XỬ LÝ THÊM / SỬA / XÓA (ĐÃ KHÔI PHỤC)
+  // ==========================================
+  const openForm = (sup?: any) => {
+    if (sup) {
+      setEditingId(sup.id);
+      setFormData({ name: sup.name, contactPerson: sup.contactPerson || '', phone: sup.phone, email: sup.email || '', address: sup.address || '' });
     } else {
-      setEditingItem(null);
-      setFormData({ supplierCode: '', supplierName: '', contactName: '', phone: '', email: '', address: '', isActive: true });
+      setEditingId(null);
+      setFormData({ name: '', contactPerson: '', phone: '', email: '', address: '' });
     }
     setOpenDialog(true);
   };
 
-  // 4. Lưu Form
-  const handleSave = async () => {
-    if (!formData.supplierName.trim()) return showToast('Vui lòng nhập Tên Nhà cung cấp', 'warning');
-    
-    // ĐÃ SỬA: "Dịch" tên biến từ form sang đúng tên mà Java Spring Boot cần
-    const payload = {
-      code: formData.supplierCode,            // Gửi 'code' thay vì 'supplierCode'
-      name: formData.supplierName,            // Gửi 'name' thay vì 'supplierName'
-      contactPerson: formData.contactName,    // Gửi 'contactPerson' thay vì 'contactName'
-      phone: formData.phone,
-      email: formData.email,
-      address: formData.address,
-      status: formData.isActive ? 'ACTIVE' : 'INACTIVE'
-    };
-
+  const handleSaveSupplier = async () => {
+    if (!formData.name || !formData.phone) return showToast('Tên và SĐT là bắt buộc', 'warning');
     try {
-      if (editingItem) {
-        await supplierAPI.update(editingItem.id, payload);
+      if (editingId) {
+        await supplierAPI.update(editingId, formData);
         showToast('Cập nhật thành công', 'success');
       } else {
-        await supplierAPI.create(payload);
+        await supplierAPI.create(formData);
         showToast('Thêm mới thành công', 'success');
       }
-      setOpenDialog(false);
-      fetchSuppliers();
-    } catch (error: any) {
-      showToast(error.message || 'Lỗi khi lưu Nhà cung cấp', 'error');
-    }
+      setOpenDialog(false); loadSuppliers();
+    } catch (error) { showToast('Lỗi khi lưu', 'error'); }
   };
 
-  // 5. Xóa Form
   const handleDelete = async (id: number) => {
-    if (window.confirm('Bạn có chắc chắn muốn khóa Nhà cung cấp này?')) {
-      try {
-        await supplierAPI.delete(id);
-        showToast('Đã khóa thành công', 'success');
-        fetchSuppliers();
-      } catch (error: any) {
-        showToast(error.message || 'Lỗi khi khóa Nhà cung cấp', 'error');
-      }
-    }
+    if (!window.confirm('Bạn có chắc muốn xóa nhà cung cấp này?')) return;
+    try {
+      await supplierAPI.delete(id); 
+      showToast('Xóa thành công', 'success'); 
+      loadSuppliers();
+    } catch (error: any) { showToast(error.message || 'Lỗi khi xóa', 'error'); }
+  };
+
+  // ==========================================
+  // XỬ LÝ CHI TIẾT (HISTORY & DANH MỤC SP)
+  // ==========================================
+  const handleOpenDetail = async (supplier: any) => {
+    setSelectedSupplier(supplier);
+    setOpenDetail(true);
+    setTabValue(0);
+    setHistoryTickets([]);
+    setLoadingHistory(true);
+    try {
+      const hRes = await importTicketAPI.getAll({ supplierId: supplier.id });
+      const hData = hRes.data?.data || hRes.data || [];
+      const filtered = Array.isArray(hData) ? hData.filter((t: any) => {
+        const sid = t.supplier?.id || t.supplierId || t.supplier_id;
+        return String(sid) === String(supplier.id);
+      }) : [];
+      setHistoryTickets(filtered);
+
+      const pRes = await supplierAPI.getProducts(supplier.id);
+      const pData = pRes.data?.data || pRes.data || [];
+      setSupplierProducts(pData.map((p: any) => ({
+        variantId: p.variantId,
+        sku: p.sku,
+        variantName: p.variantName,
+        importPrice: p.costPrice || 0 
+      })));
+    } catch (error) { showToast('Lỗi tải dữ liệu chi tiết', 'error'); } 
+    finally { setLoadingHistory(false); }
+  };
+
+  const handleSaveConfig = async () => {
+    try {
+      setSavingConfig(true);
+      const payload = supplierProducts.map(p => ({ variantId: p.variantId, importPrice: Number(p.importPrice) }));
+      await supplierAPI.configProducts(selectedSupplier.id, payload);
+      showToast('Lưu danh mục thành công!', 'success');
+    } catch (error) { showToast('Lỗi khi lưu cấu hình', 'error'); } 
+    finally { setSavingConfig(false); }
   };
 
   return (
     <Box className="fade-in">
-      <Box sx={{ mb: 2 }}>
-        <Typography variant="h5" sx={{ fontWeight: 400, color: '#333', textTransform: 'uppercase' }}>
-          DANH SÁCH NHÀ CUNG CẤP
-        </Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h5" sx={{ fontWeight: 600 }}>QUẢN LÝ NHÀ CUNG CẤP</Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => openForm()} sx={{ bgcolor: '#00a65a' }}>
+          Thêm Đối Tác
+        </Button>
       </Box>
 
-      <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)', border: 'none' }}>
-        <CardContent sx={{ p: 0, '&:last-child': { pb: 0 } }}>
-          
-          <Box sx={{ p: 1.5, display: 'flex', flexWrap: 'wrap', gap: 0.5, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
-            <TextField 
-              size="small" placeholder="Tìm: Mã NCC/Tên/SĐT..." 
-              value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)}
-              sx={{ width: 280, bgcolor: 'white', mr: 1, '& .MuiInputBase-input': { py: 0.8, fontSize: '0.875rem' } }}
-            />
-            
-            <Button onClick={() => handleOpenDialog()} size="small" variant="contained" startIcon={<AddIcon />} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thêm NCC</Button>
-            <Button size="small" variant="contained" startIcon={<DebtIcon />} sx={{ bgcolor: '#f39c12', '&:hover': { bgcolor: '#db8b0b' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Thanh Toán Công Nợ</Button>
-            <Button size="small" variant="contained" startIcon={<PrintIcon />} sx={{ bgcolor: '#f012be', '&:hover': { bgcolor: '#d810aa' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Print</Button>
-            <Button size="small" variant="contained" startIcon={<ExcelIcon />} sx={{ bgcolor: '#0073b7', '&:hover': { bgcolor: '#00609a' }, textTransform: 'none', borderRadius: 1, boxShadow: 'none' }}>Xuất Excel</Button>
+      <Card sx={{ borderRadius: 2 }}>
+        <CardContent sx={{ p: 0 }}>
+          <Box sx={{ p: 2 }}>
+            <TextField size="small" placeholder="Tìm kiếm..." value={searchQuery} onChange={(e) => setSearchQuery(e.target.value)} 
+              InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small"/></InputAdornment> }} />
           </Box>
-
           <TableContainer>
-            <Table sx={{ minWidth: 1300 }}>
-              <TableHead sx={{ bgcolor: '#ffffff' }}>
+            <Table>
+              <TableHead sx={{ bgcolor: '#f8fafc' }}>
                 <TableRow>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }}>ID</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 40, p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', width: 90, p: 1, fontSize: '0.85rem', fontWeight: 600, color: '#475569' }} align="center">Thao Tác</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Mã NCC</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Tên Nhà Cung Cấp</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Người Liên Hệ</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Điện Thoại</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Email</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Công Nợ</TableCell>
-                  <TableCell sx={{ borderBottom: '2px solid #f1f5f9', p: 1.5, fontWeight: 600, color: '#475569' }}>Trạng Thái</TableCell>
+                  <TableCell>Mã NCC</TableCell><TableCell>Tên Nhà Cung Cấp</TableCell>
+                  <TableCell>Điện Thoại</TableCell><TableCell align="right">Công Nợ</TableCell>
+                  <TableCell align="center">Trạng Thái</TableCell><TableCell align="right">Thao Tác</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
-                {filteredSuppliers.map((row) => (
-                  <TableRow key={row.id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1, fontSize: '0.85rem', color: '#64748b' }}>{row.id}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 0 }} align="center"><Checkbox size="small" /></TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1 }} align="center">
-                      <IconButton size="small" color="primary" onClick={() => handleOpenDialog(row)}><EditIcon fontSize="small" /></IconButton>
-                      <IconButton size="small" color="error" onClick={() => handleDelete(row.id)}><DeleteIcon fontSize="small" /></IconButton>
-                    </TableCell>
-                    
-                    {/* ĐÃ SỬA: Map đúng tên biến của Backend để hiện dữ liệu */}
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 600, color: '#64748b', p: 1.5 }}>{row.code}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#0f172a', fontWeight: 600, p: 1.5 }}>{row.name}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.contactPerson}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.phone}</TableCell>
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', color: '#475569', p: 1.5 }}>{row.email}</TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', fontSize: '0.85rem', fontWeight: 700, color: (row.debtAmount || 0) > 0 ? '#dc2626' : '#475569', p: 1.5 }}>
-                      {formatCurrency(row.debtAmount || 0)}
-                    </TableCell>
-                    
-                    <TableCell sx={{ borderBottom: '1px solid #f1f5f9', p: 1.5 }}>
-                      <Chip 
-                        label={row.status === 'ACTIVE' ? 'Đang giao dịch' : 'Ngừng'} 
-                        size="small" 
-                        sx={{ bgcolor: row.status === 'ACTIVE' ? '#dcfce7' : '#f1f5f9', color: row.status === 'ACTIVE' ? '#166534' : '#64748b', fontWeight: 600, border: 'none', borderRadius: 1 }} 
-                      />
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {loading ? <TableRow><TableCell colSpan={6} align="center"><CircularProgress /></TableCell></TableRow> :
+                  filteredSuppliers.map((s) => (
+                    <TableRow key={s.id} hover>
+                      <TableCell sx={{ fontWeight: 600, color: '#0284c7' }}>{s.code}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{s.name}</TableCell>
+                      <TableCell>{s.phone}</TableCell>
+                      <TableCell align="right" sx={{ fontWeight: 700, color: (s.debt || 0) > 0 ? '#dc2626' : 'inherit' }}>{formatCurrency(s.debt)}</TableCell>
+                      <TableCell align="center"><Chip label={s.status === 'ACTIVE' ? 'Đang giao dịch' : 'Ngừng'} size="small" color={s.status === 'ACTIVE' ? 'success' : 'default'} /></TableCell>
+                      <TableCell align="right">
+                        <IconButton size="small" color="primary" title="Lịch sử & Danh mục" onClick={() => handleOpenDetail(s)}><HistoryIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" color="info" onClick={() => openForm(s)}><EditIcon fontSize="small" /></IconButton>
+                        <IconButton size="small" color="error" onClick={() => handleDelete(s.id)}><DeleteIcon fontSize="small" /></IconButton>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                }
               </TableBody>
             </Table>
           </TableContainer>
-
-          <Box sx={{ p: 1.5, bgcolor: '#ffffff', borderTop: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-             <Pagination count={1} size="small" shape="rounded" color="primary" />
-             <Typography variant="body2" color="text.secondary" sx={{ fontWeight: 500 }}>Tổng: {filteredSuppliers.length} bản ghi</Typography>
-          </Box>
         </CardContent>
       </Card>
 
-      {/* DIALOG THÊM / SỬA */}
+      {/* DIALOG THÊM / SỬA (Đã khôi phục) */}
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 700, borderBottom: '1px solid #eee' }}>{editingItem ? 'SỬA NHÀ CUNG CẤP' : 'THÊM NHÀ CUNG CẤP'}</DialogTitle>
-        <DialogContent sx={{ pt: '20px !important', display: 'flex', flexDirection: 'column', gap: 2 }}>
+        <DialogTitle sx={{ fontWeight: 700 }}>{editingId ? 'CẬP NHẬT NHÀ CUNG CẤP' : 'THÊM MỚI ĐỐI TÁC'}</DialogTitle>
+        <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 2 }}>
+          <TextField label="Tên Nhà Cung Cấp (*)" size="small" fullWidth value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
           <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField size="small" label="Mã NCC (Tự tạo nếu trống)" value={formData.supplierCode} onChange={e => setFormData({...formData, supplierCode: e.target.value})} />
-            <TextField size="small" label="Tên Nhà cung cấp (*)" value={formData.supplierName} onChange={e => setFormData({...formData, supplierName: e.target.value})} required />
-            <TextField size="small" label="Người liên hệ" value={formData.contactName} onChange={e => setFormData({...formData, contactName: e.target.value})} />
-            <TextField size="small" label="Điện thoại (10 số)" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+            <TextField label="Người liên hệ" size="small" fullWidth value={formData.contactPerson} onChange={e => setFormData({...formData, contactPerson: e.target.value})} />
+            <TextField label="Số điện thoại (*)" size="small" fullWidth value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
           </Box>
-          <TextField fullWidth size="small" label="Email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-          <TextField fullWidth size="small" label="Địa chỉ" multiline rows={2} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
+          <TextField label="Email" size="small" fullWidth value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
+          <TextField label="Địa chỉ" size="small" fullWidth multiline rows={2} value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} />
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>
-          <Button onClick={() => setOpenDialog(false)} color="inherit">Hủy</Button>
-          <Button variant="contained" onClick={handleSave} sx={{ bgcolor: '#00a65a', '&:hover': { bgcolor: '#008d4c' }, boxShadow: 'none' }}>Lưu thông tin</Button>
+          <Button onClick={() => setOpenDialog(false)}>Hủy</Button>
+          <Button variant="contained" onClick={handleSaveSupplier} sx={{ bgcolor: '#00a65a' }}>Lưu Thông Tin</Button>
         </DialogActions>
+      </Dialog>
+
+      {/* DIALOG CHI TIẾT (HISTORY & DANH MỤC) */}
+      <Dialog open={openDetail} onClose={() => setOpenDetail(false)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ bgcolor: '#0f172a', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" fontWeight={700}>{selectedSupplier?.name}</Typography>
+          <IconButton size="small" onClick={() => setOpenDetail(false)} sx={{ color: 'white' }}><CloseIcon /></IconButton>
+        </DialogTitle>
+        <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} centered>
+            <Tab label="Lịch sử nhập hàng" sx={{ fontWeight: 700 }} />
+            <Tab label="Danh mục hàng cung cấp" sx={{ fontWeight: 700 }} />
+          </Tabs>
+        </Box>
+        <DialogContent dividers sx={{ p: 0, minHeight: 400 }}>
+          {tabValue === 0 && (
+             <TableContainer>
+                <Table size="small">
+                  <TableHead sx={{ bgcolor: '#f1f5f9' }}><TableRow>
+                    <TableCell>Mã Phiếu</TableCell><TableCell>Ngày Nhập</TableCell>
+                    <TableCell align="right">Tổng Tiền</TableCell><TableCell align="center">Trạng Thái</TableCell>
+                  </TableRow></TableHead>
+                  <TableBody>
+                    {loadingHistory ? <TableRow><TableCell colSpan={4} align="center" sx={{ py: 3 }}><CircularProgress size={24}/></TableCell></TableRow> :
+                      historyTickets.length === 0 ? <TableRow><TableCell colSpan={4} align="center" sx={{ py: 5 }}>Chưa có giao dịch.</TableCell></TableRow> :
+                      historyTickets.map((row) => (
+                        <TableRow key={row.id} hover>
+                          <TableCell sx={{ fontWeight: 600, color: '#0284c7' }}>{row.code}</TableCell>
+                          <TableCell>{new Date(row.importDate).toLocaleDateString('vi-VN')}</TableCell>
+                          <TableCell align="right" sx={{ fontWeight: 700 }}>{formatCurrency(row.totalAmount)}</TableCell>
+                          <TableCell align="center"><Chip label={row.debtAmount > 0 ? "Còn nợ" : "Đã trả"} size="small" color={row.debtAmount > 0 ? "error" : "success"} /></TableCell>
+                        </TableRow>
+                      ))
+                    }
+                  </TableBody>
+                </Table>
+              </TableContainer>
+          )}
+          {tabValue === 1 && (
+            <Box sx={{ p: 2 }}>
+               <TextField fullWidth size="small" placeholder="🔍 Tìm SP thêm vào danh mục..." 
+                value={productSearch} onChange={(e) => setProductSearch(e.target.value)} sx={{ mb: 2 }} />
+              {productSearch.length > 1 && (
+                <Paper sx={{ mb: 2, maxHeight: 200, overflow: 'auto' }}>
+                  <List dense>
+                    {allProducts.filter(p => p.variantName.toLowerCase().includes(productSearch.toLowerCase())).map(p => (
+                      <ListItemButton key={p.variantId} onClick={() => {
+                        if (!supplierProducts.some(sp => sp.variantId === p.variantId)) {
+                            setSupplierProducts([...supplierProducts, { ...p, importPrice: p.costPrice }]);
+                        }
+                        setProductSearch('');
+                      }}>
+                        <ListItemText primary={p.variantName} secondary={`SKU: ${p.sku}`} />
+                        <AddIcon color="primary" />
+                      </ListItemButton>
+                    ))}
+                  </List>
+                </Paper>
+              )}
+              <TableContainer component={Paper} variant="outlined">
+                <Table size="small">
+                  <TableHead><TableRow><TableCell>Sản phẩm</TableCell><TableCell align="right">Giá nhập thỏa thuận</TableCell><TableCell align="center">Xóa</TableCell></TableRow></TableHead>
+                  <TableBody>
+                    {supplierProducts.map((p) => (
+                      <TableRow key={p.variantId}>
+                        <TableCell>{p.variantName}</TableCell>
+                        <TableCell align="right"><TextField size="small" type="number" value={p.importPrice} 
+                            onChange={(e) => setSupplierProducts(supplierProducts.map(sp => sp.variantId === p.variantId ? {...sp, importPrice: e.target.value} : sp))} 
+                            sx={{ width: 120 }} /></TableCell>
+                        <TableCell align="center"><IconButton size="small" color="error" onClick={() => setSupplierProducts(supplierProducts.filter(sp => sp.variantId !== p.variantId))}><RemoveIcon /></IconButton></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+              <Box sx={{ mt: 2, textAlign: 'right' }}><Button variant="contained" onClick={handleSaveConfig} disabled={savingConfig}>Lưu Danh Mục</Button></Box>
+            </Box>
+          )}
+        </DialogContent>
       </Dialog>
     </Box>
   );
