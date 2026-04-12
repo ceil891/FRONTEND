@@ -46,27 +46,34 @@ export const ImportInventoryPage: React.FC = () => {
     return new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(value || 0);
   };
 
-  // TÁCH LOGIC LOAD SẢN PHẨM: Để có thể gọi lại khi đổi Nhà cung cấp
+  // 🟢 SỬA TẠI ĐÂY: Tải tất cả sản phẩm để không bị ẩn hàng mới
   const loadProductsBySupplier = async (supplierId?: string | number) => {
     try {
-      // Gọi API với param supplierId nếu có
-      const params = supplierId ? { supplierId } : {};
-      const prodRes = await productAPI.getAll(params);
+      // Không gửi supplierId vào params để API trả về toàn bộ sản phẩm
+      const prodRes = await productAPI.getAll(); 
       const rawProducts = prodRes.data?.data || prodRes.data || [];
       
       const allVariants = rawProducts.flatMap((product: any) => {
         if (product.variants && Array.isArray(product.variants)) {
           return product.variants.map((v: any) => ({
             ...v,
-            variantName: `${product.name} (${[v.colorName, v.sizeName].filter(Boolean).join(' - ')})`,
-            costPrice: v.costPrice || product.baseCostPrice || 0 
+            // Hiển thị thêm tên NCC của sản phẩm (nếu có) để dễ chọn
+            variantName: `${product.name} (${[v.colorName, v.sizeName].filter(Boolean).join(' - ')}) ${product.supplierName ? `[${product.supplierName}]` : ''}`,
+            costPrice: v.costPrice || product.baseCostPrice || 0,
+            productSupplierId: product.supplierId 
           }));
         }
         return [];
       });
-      setProducts(allVariants);
+
+      // Ưu tiên sản phẩm của NCC đang chọn lên đầu danh sách
+      const sortedVariants = supplierId 
+        ? [...allVariants].sort((a, b) => (Number(a.productSupplierId) === Number(supplierId) ? -1 : 1))
+        : allVariants;
+
+      setProducts(sortedVariants);
     } catch (error) {
-      console.error("Lỗi tải sản phẩm theo NCC", error);
+      console.error("Lỗi tải sản phẩm", error);
     }
   };
 
@@ -86,7 +93,6 @@ export const ImportInventoryPage: React.FC = () => {
         setAddFormData(prev => ({ ...prev, storeId: defaultStore }));
       }
       
-      // Load sản phẩm ban đầu (tất cả)
       void loadProductsBySupplier();
     } catch (error) { 
       showToast('Lỗi tải danh mục', 'error'); 
@@ -119,7 +125,7 @@ export const ImportInventoryPage: React.FC = () => {
   useEffect(() => { void loadCategories(); }, []);
   useEffect(() => { void fetchImportTickets(); }, [currentStoreId]);
 
-  // EFFECT: Khi supplierId trong form thay đổi, tải lại danh sách sản phẩm tương ứng
+  // 🟢 SỬA TẠI ĐÂY: Khi đổi NCC, chỉ cần ưu tiên lại danh sách sản phẩm, không cần gọi API lọc
   useEffect(() => {
     if (openAddDialog) {
         void loadProductsBySupplier(addFormData.supplierId);
@@ -188,6 +194,7 @@ export const ImportInventoryPage: React.FC = () => {
 
   return (
     <Box className="fade-in">
+      {/* Header and Store Selector - Giữ nguyên */}
       <Box sx={{ bgcolor: '#3498db', color: 'white', p: 1.5, display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
         <Typography variant="subtitle1" fontWeight={700}>Kho vận / Nhập hàng</Typography>
         <Stack direction="row" spacing={1} alignItems="center">
@@ -199,11 +206,12 @@ export const ImportInventoryPage: React.FC = () => {
             sx={{ bgcolor: 'white', height: 32, borderRadius: '16px', minWidth: 180 }}
           >
             <MenuItem value="ALL">Tất cả chi nhánh</MenuItem>
-            {stores.map(s => <MenuItem key={s.id} value={s.id}>{s.name}</MenuItem>)}
+            {stores.map(s => <MenuItem value={s.id}>{s.name}</MenuItem>)}
           </Select>
         </Stack>
       </Box>
 
+      {/* Main Table Content - Giữ nguyên */}
       <Box sx={{ px: 3 }}>
         <Card sx={{ borderRadius: 2, boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
           <Box sx={{ p: 2, display: 'flex', gap: 1, borderBottom: '1px solid #f1f5f9', alignItems: 'center' }}>
@@ -264,6 +272,7 @@ export const ImportInventoryPage: React.FC = () => {
         </Card>
       </Box>
 
+      {/* Add Dialog */}
       <Dialog open={openAddDialog} onClose={() => !submitting && setOpenAddDialog(false)} maxWidth="lg" fullWidth>
         <DialogTitle sx={{ bgcolor: '#00a65a', color: 'white', fontWeight: 700 }}>TẠO PHIẾU NHẬP KHO MỚI</DialogTitle>
         <DialogContent dividers sx={{ pt: 3 }}>
@@ -283,7 +292,7 @@ export const ImportInventoryPage: React.FC = () => {
                         value={addFormData.supplierId} 
                         onChange={e => {
                             const val = e.target.value;
-                            setAddFormData({...addFormData, supplierId: val, items: []}); // Reset items khi đổi NCC để tránh nhầm lẫn
+                            setAddFormData({...addFormData, supplierId: val, items: []});
                         }}
                       >
                         {suppliers.map(s => <MenuItem key={s.id} value={s.id.toString()}>{s.name}</MenuItem>)}
@@ -296,10 +305,10 @@ export const ImportInventoryPage: React.FC = () => {
                 <TextField 
                     fullWidth 
                     size="small" 
-                    placeholder={addFormData.supplierId ? "Tìm sản phẩm của nhà cung cấp này..." : "Vui lòng chọn NCC trước khi tìm sản phẩm"} 
+                    // 🟢 SỬA TẠI ĐÂY: Placeholder thân thiện hơn và không bị disabled
+                    placeholder="Tìm sản phẩm theo tên hoặc mã..." 
                     value={productSearchKey} 
                     onChange={e => setProductSearchKey(e.target.value)} 
-                    disabled={!addFormData.supplierId}
                     sx={{mb:1}}
                 />
                 {productSearchKey && (
@@ -319,6 +328,7 @@ export const ImportInventoryPage: React.FC = () => {
                       ))}
                     </Paper>
                   )}
+                  {/* Table for items and Footer - Giữ nguyên */}
                   <TableContainer component={Paper} variant="outlined" sx={{ minHeight: 200 }}>
                     <Table size="small">
                       <TableHead sx={{ bgcolor: '#f8fafc' }}>
@@ -384,7 +394,7 @@ export const ImportInventoryPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      {/* DIALOG CHI TIẾT PHIẾU NHẬP (Giữ nguyên) */}
+      {/* Detail Dialog - Giữ nguyên */}
       <Dialog open={openDetail} onClose={() => setOpenDetail(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           CHI TIẾT PHIẾU: {selectedTicket?.code}
